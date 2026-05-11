@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+@theme {
+  --color-pitch-green: #2d5a27;
+  --color-pitch-line: rgba(255, 255, 255, 0.4);
+}
+
+body {
+  @apply bg-stone-950 text-stone-100 antialiased;
+}
