@@ -102,10 +102,10 @@ export const TacticalBoard: React.FC = () => {
                 exit={{ opacity: 0 }}
                 className="absolute inset-y-0 bg-blue-500 pointer-events-none"
                 style={{ 
-                  left: activeStep.highlightChannel === 'L-Flank' ? '0%' : 
-                        activeStep.highlightChannel === 'L-Half' ? '20%' :
+                  left: activeStep.highlightChannel === 'Left Flank' ? '0%' : 
+                        activeStep.highlightChannel === 'Left Half' ? '20%' :
                         activeStep.highlightChannel === 'Central' ? '40%' :
-                        activeStep.highlightChannel === 'R-Half' ? '60%' : '80%',
+                        activeStep.highlightChannel === 'Right Half' ? '60%' : '80%',
                   width: '20%'
                 }}
               />
@@ -134,13 +134,13 @@ export const TacticalBoard: React.FC = () => {
 
                 {/* Grid Labels */}
                 <div className="absolute top-1.5 left-0 right-0 flex justify-around px-4 font-mono text-[7px] text-stone-600 font-bold uppercase tracking-[0.2em]">
-                   <span>Ch 1</span><span>Ch 2</span><span>Ch 3</span><span>Ch 2</span><span>Ch 1</span>
+                   <span>Left Flank</span><span>Left Half</span><span>Central</span><span>Right Half</span><span>Right Flank</span>
                 </div>
                 <div className="absolute inset-y-0 right-2 flex flex-col justify-around font-mono text-[8px] text-amber-500/25 font-bold uppercase [writing-mode:vertical-lr] tracking-[0.3em]">
-                   <span>Zone 4 (Attacking)</span>
-                   <span>Zone 3 (Att-Mid)</span>
-                   <span>Zone 2 (Def-Mid)</span>
-                   <span>Zone 1 (Defensive)</span>
+                   <span>Final Third</span>
+                   <span>Attacking Third</span>
+                   <span>Midfield Zone</span>
+                   <span>Defensive Zone</span>
                 </div>
                 {/* Midfield Line Label */}
                 <div className="absolute top-1/2 left-4 -translate-y-1/2 text-[6px] text-stone-700 uppercase font-black tracking-widest">
@@ -386,7 +386,17 @@ export const TacticalBoard: React.FC = () => {
             
             <div className="flex items-center justify-between mt-4">
               <div className="flex items-center gap-3 px-2 py-1 text-[9px] text-stone-600 font-bold uppercase tracking-widest">
-                <Target size={12} /> Live Geography: {currentPos ? `Zone ${Math.ceil(4 - currentPos.y / 25)}` : 'Scanning...'}
+                <Target size={12} /> 
+                Live Geography: {currentPos ? (() => {
+                  const z = Math.max(1, Math.min(4, Math.ceil(4 - currentPos.y / 25)));
+                  const labels: Record<number, string> = {
+                    4: 'Final Third',
+                    3: 'Attacking Third',
+                    2: 'Midfield Zone',
+                    1: 'Defensive Zone'
+                  };
+                  return labels[z];
+                })() : 'Scanning...'}
               </div>
               <div className="px-3 py-1 bg-stone-800 rounded flex items-center gap-2 border border-stone-700">
                 <div className="w-1.5 h-1.5 rounded-full bg-stone-500" />

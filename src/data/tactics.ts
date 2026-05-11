@@ -162,11 +162,11 @@ export const SEQUENCES: Record<Moment, TacticalStep[]> = {
   'att-org': [
     { label: 'Dispersal: Expand shape to create space', highlightZone: 1, focusPlayers: [2, 3, 7, 11] },
     { label: 'Support: Ensure receiver availability', focusPlayers: [6, 8, 10] },
-    { label: 'Penetration: Progress ball to Zone 4', highlightZone: 4, focusPlayers: [9] }
+    { label: 'Penetration: Progress ball to Final Third', highlightZone: 4, focusPlayers: [9] }
   ],
   'def-org': [
     { label: 'Delay: Slow down forward progress', highlightZone: 4, focusPlayers: [9, 10] },
-    { label: 'Direct: Force play into Channel 1', highlightChannel: 'L-Flank', focusPlayers: [2, 7] },
+    { label: 'Direct: Force play into Channel 1', highlightChannel: 'Left Flank', focusPlayers: [2, 7] },
     { label: 'Compactness: Maintain team shape/Balance', highlightZone: 2, focusPlayers: [4, 5, 6] }
   ],
   'trans-att': [
