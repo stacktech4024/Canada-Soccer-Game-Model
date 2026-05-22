@@ -1,5 +1,7 @@
 import React from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { PlayerProfile } from '../data/players';
+import { PlayerPiece } from './PlayerPiece';
 
 interface PitchProps {
   activePlayerId: string | null;
@@ -20,12 +22,13 @@ export const Pitch: React.FC<PitchProps> = ({ activePlayerId, players, onPlayerS
         <div className="absolute inset-x-0 top-[75%] h-px bg-white/50" />
       </div>
 
-      {/* Channel Grid (Vertical 5 Channels) */}
+      {/* Channel Grid (Vertical 6 Channels Canada Soccer Framework) */}
       <div className="absolute inset-0 pointer-events-none opacity-10">
-        <div className="absolute inset-y-0 left-[20%] w-px bg-white" />
-        <div className="absolute inset-y-0 left-[40%] w-px bg-white" />
-        <div className="absolute inset-y-0 left-[60%] w-px bg-white" />
-        <div className="absolute inset-y-0 left-[80%] w-px bg-white" />
+        <div className="absolute inset-y-0 left-[16.6%] w-px bg-white" />
+        <div className="absolute inset-y-0 left-[33.3%] w-px bg-white" />
+        <div className="absolute inset-y-0 left-[50%] w-px bg-white" />
+        <div className="absolute inset-y-0 left-[66.6%] w-px bg-white" />
+        <div className="absolute inset-y-0 left-[83.3%] w-px bg-white" />
       </div>
 
       {/* Pitch Markings SVG */}
@@ -39,6 +42,53 @@ export const Pitch: React.FC<PitchProps> = ({ activePlayerId, players, onPlayerS
         {/* The Nets (Goals) */}
         <rect x="42" y="2" width="16" height="3" fill="none" stroke="white" strokeWidth="1" opacity="0.4" rx="1" />
         <rect x="42" y="115" width="16" height="3" fill="none" stroke="white" strokeWidth="1" opacity="0.4" rx="1" />
+
+        {/* Selected Player Patterns */}
+        <AnimatePresence>
+          {activePlayerId && (
+            <motion.g 
+              key={`patterns-${activePlayerId}`}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              {players.find(p => p.id === activePlayerId)?.patterns.map(pattern => (
+                <g key={pattern.id}>
+                  {pattern.type === 'zone' ? (
+                    <motion.polygon
+                      points={pattern.points.map(p => `${p.x},${p.y}`).join(' ')}
+                      className="fill-amber-500/10 stroke-amber-500/25 stroke-[0.3]"
+                    >
+                      <title>{pattern.label}</title>
+                    </motion.polygon>
+                  ) : (
+                    <>
+                      <motion.path
+                        d={`M ${pattern.points[0].x} ${pattern.points[0].y} ${pattern.points.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ')}`}
+                        fill="none"
+                        stroke="rgba(255,255,255,0.3)"
+                        strokeWidth="0.4"
+                        strokeDasharray="1.5 1.5"
+                      />
+                      <motion.path
+                        d="M 0 -1 L 1.5 0 L 0 1 Z"
+                        fill="rgba(255,255,255,0.5)"
+                        animate={{ 
+                          x: pattern.points[pattern.points.length - 1].x,
+                          y: pattern.points[pattern.points.length - 1].y,
+                          rotate: Math.atan2(
+                            pattern.points[pattern.points.length - 1].y - pattern.points[pattern.points.length - 2].y,
+                            pattern.points[pattern.points.length - 1].x - pattern.points[pattern.points.length - 2].x
+                          ) * (180 / Math.PI)
+                        }}
+                      />
+                    </>
+                  )}
+                </g>
+              ))}
+            </motion.g>
+          )}
+        </AnimatePresence>
       </svg>
 
       {/* Players */}
@@ -46,19 +96,19 @@ export const Pitch: React.FC<PitchProps> = ({ activePlayerId, players, onPlayerS
         <button
           key={player.id}
           onClick={() => onPlayerSelect(player.id)}
-          className={`absolute -translate-x-1/2 -translate-y-1/2 w-10 h-10 rounded-full flex items-center justify-center text-xs font-black transition-all duration-300 transform
-            ${activePlayerId === player.id 
-              ? 'bg-amber-500 text-stone-950 scale-125 z-20 shadow-[0_0_20px_rgba(245,158,11,0.6)]' 
-              : 'bg-stone-800 text-stone-400 hover:bg-stone-700 hover:scale-110 z-10'}`}
+          title={`${player.position} (${player.shortPos})`}
+          className={`absolute -translate-x-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center transition-all duration-300 transform
+            ${activePlayerId === player.id ? 'z-20' : 'z-10'}`}
           style={{ 
             left: `${player.coordinates.x}%`, 
             top: `${player.coordinates.y}%` 
           }}
         >
-          {player.number}
-          <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-[9px] text-stone-500 font-bold tracking-tighter uppercase">
-            {player.shortPos}
-          </span>
+          <PlayerPiece 
+            number={player.number}
+            type={player.number === 1 ? 'pfc_gk' : 'pfc_player'}
+            isSelected={activePlayerId === player.id}
+          />
         </button>
       ))}
 

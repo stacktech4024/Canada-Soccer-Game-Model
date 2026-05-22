@@ -10,20 +10,84 @@ import { TacticalBoard } from './components/TacticalBoard';
 export default function App() {
   const [activeTab, setActiveTab] = useState<'profiles' | 'tactical'>('profiles');
   const [activePlayerId, setActivePlayerId] = useState<string | null>(players[0].id);
+  const [showPortfolio, setShowPortfolio] = useState(false);
 
   const activePlayer = players.find(p => p.id === activePlayerId) || null;
 
   return (
     <div className="min-h-screen bg-stone-950 selection:bg-amber-500/30">
-      {/* Header (same as before) */}
+      {/* Portfolio Modal */}
+      <AnimatePresence>
+        {showPortfolio && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-stone-950/90 backdrop-blur-xl p-6 md:p-12 overflow-y-auto"
+          >
+            <div className="max-w-4xl mx-auto space-y-12">
+              <div className="flex justify-between items-center border-b border-stone-800 pb-8">
+                <div>
+                  <h2 className="text-3xl font-black uppercase tracking-tighter">B Diploma <span className="text-amber-500 italic">Portfolio</span></h2>
+                  <p className="text-xs font-mono text-stone-500 tracking-widest mt-2 uppercase">Official Session Plans & Tactical Frameworks</p>
+                </div>
+                <button 
+                  onClick={() => setShowPortfolio(false)}
+                  className="px-6 py-2 bg-stone-900 border border-stone-800 rounded-lg text-[10px] font-black uppercase hover:bg-stone-800 transition-all"
+                >
+                  Close [ESC]
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {[
+                  { title: 'Goal Setting & Objectives', category: 'Phase 1', desc: 'Establishing seasonal macrocycles and team identity.' },
+                  { title: 'Attacking In The Final Third', category: 'Session Plan #12', desc: 'Functional activity focusing on wing overloads and box entries.' },
+                  { title: 'Mid-Block Defensive Compactness', category: 'Session Plan #04', desc: 'Technical/Tactical lead on denial of central penetration.' },
+                  { title: 'Transition To Defend (5s Rule)', category: 'Principles', desc: 'Mental triggers and recovery sprint logistics.' }
+                ].map((doc, i) => (
+                  <motion.div 
+                    key={i}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.1 }}
+                    className="group bg-stone-900 border border-stone-800 p-6 rounded-2xl hover:border-amber-500/50 transition-all cursor-pointer"
+                  >
+                    <div className="flex justify-between items-start mb-4">
+                      <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest bg-amber-500/10 px-2 py-1 rounded">{doc.category}</span>
+                      <BookOpen size={18} className="text-stone-700 group-hover:text-amber-500 transition-colors" />
+                    </div>
+                    <h3 className="text-xl font-bold mb-2">{doc.title}</h3>
+                    <p className="text-xs text-stone-500 leading-relaxed">{doc.desc}</p>
+                    <div className="mt-6 flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-stone-600">
+                      <div className="w-8 h-px bg-stone-800" />
+                      View Documentation
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+
+              <div className="p-8 border border-stone-800 border-dashed rounded-3xl text-center space-y-4">
+                <p className="text-xs text-stone-500 uppercase font-black tracking-widest">Certification Status</p>
+                <div className="flex justify-center gap-4">
+                  <div className="px-4 py-2 bg-stone-900 rounded-full border border-stone-800 text-[10px] font-bold">CSA B DIPLOMA LICENSED</div>
+                  <div className="px-4 py-2 bg-stone-900 rounded-full border border-stone-800 text-[10px] font-bold">UEFA C READY</div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Header */}
       <header className="border-b border-stone-800 px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 bg-stone-950/80 backdrop-blur-md sticky top-0 z-50">
         <div className="flex items-center gap-4">
           <div className="w-10 h-10 bg-amber-500 rounded-sm flex items-center justify-center font-black text-stone-950 text-xl transform rotate-3">
             B
           </div>
           <div>
-            <h1 className="font-bold text-lg leading-tight uppercase tracking-tight">Canada Soccer Tactics</h1>
-            <p className="text-xs font-mono text-stone-500 tracking-wider">B DIPLOMA PORTFOLIO / M6-M20</p>
+            <h1 className="font-bold text-lg leading-tight uppercase tracking-tight">Coach Darren Billy</h1>
+            <p className="text-xs font-mono text-stone-500 tracking-wider">GAME MODEL PORTFOLIO / CSA B DIPLOMA</p>
           </div>
         </div>
         
@@ -48,13 +112,13 @@ export default function App() {
             <Info size={14} className="text-stone-500" />
             <span className="text-[10px] font-mono text-stone-500 uppercase tracking-widest">Interactive Game Model v1.0</span>
           </div>
-          <a 
-            href="#"
+          <button 
+            onClick={() => setShowPortfolio(true)}
             className="flex items-center gap-2 text-xs font-bold hover:text-amber-500 transition-colors uppercase tracking-widest"
           >
             <BookOpen size={14} />
             Portfolio
-          </a>
+          </button>
         </div>
       </header>
 
@@ -130,9 +194,9 @@ export default function App() {
             >
               <div className="max-w-2xl">
                  <h2 className="text-4xl font-bold mb-4 uppercase tracking-tighter">Tactical <span className="text-amber-500 italic">Game Model</span></h2>
-                 <p className="text-stone-400 text-sm leading-relaxed">
-                   Refining team organization across the 4 moments of the game. Analyze unit relationships 
-                   within vertical channels and horizontal zones as defined by Canada Soccer proficiency standards.
+                 <p className="text-stone-400 text-sm leading-relaxed font-medium">
+                   Refining team organization based on the <strong>Verticality & Transition</strong> ideology. 
+                   Analyze unit relationships within vertical channels and horizontal zones, emphasizing the <strong>5-Second Mental Trigger</strong> for ball recovery.
                  </p>
               </div>
               <TacticalBoard />
