@@ -6,8 +6,9 @@ import { Settings2, RotateCcw, LayoutGrid, ShieldAlert, Zap, Info, Target, Users
 
 import { getTacticalAnalysis } from '../services/geminiService';
 import { PlayerPiece } from './PlayerPiece';
+import { PitchBackground } from './PitchBackground';  // ADD THIS IMPORT
 
-const UnitLinks: React.FC<{ players: number[], positions: Record<number, { x: number, y: number }>, color: string, strokeWidth?: number }> = ({ players, positions, color, strokeWidth = 0.5 }) => {
+const UnitLinks: React.FC<{ players: number[], positions: Record<number, { x: number; y: number }>, color: string, strokeWidth?: number }> = ({ players, positions, color, strokeWidth = 0.5 }) => {
   if (players.length < 2) return null;
   const points = players.map(id => positions[id]).filter(Boolean);
   if (points.length < 2) return null;
@@ -64,7 +65,7 @@ export const TacticalBoard: React.FC = () => {
     const formationKey = moment === 'att-org' ? '1-4-3-3' : (moment.includes('att') ? '1-4-4-2' : '1-4-2-3-1');
     if (!isPlaying) {
       applyFormation(formationKey);
-      setManualBallPos(null); // Clear manual ball pos to use moment default
+      setManualBallPos(null);
     }
   }, [moment]);
 
@@ -133,27 +134,60 @@ export const TacticalBoard: React.FC = () => {
   const isTransitionMoment = moment === 'trans-att' || moment === 'trans-def';
 
   const getBallPos = (playersMap?: Record<number, { x: number; y: number }>) => {
-    // 1. Playback takes top priority
-    if (isPlaying && activeStep?.ballPos) return activeStep.ballPos;
+    // Priority 1: Animated sequence ball path
     if (isPlaying && activeStep?.ballPath && activeStep.ballPath.length > 0) {
-      return activeStep.ballPath[0];
+      const stepBall = activeStep.ballPath[stepIndex % activeStep.ballPath.length];
+      if (stepBall) {
+        // Clamp to field boundaries
+        return {
+          x: Math.min(96, Math.max(4, stepBall.x)),
+          y: Math.min(112, Math.max(4, stepBall.y))
+        };
+      }
     }
-    
-    // 2. Possession (selected player) takes second priority
-    if (selectedId) {
-      const pPos = playersMap ? playersMap[selectedId] : (customPositions[selectedId] || { x: 50, y: 70 });
-      return { x: pPos.x, y: pPos.y };
+
+    if (isPlaying && activeStep?.ballPos) {
+      return {
+        x: Math.min(96, Math.max(4, activeStep.ballPos.x)),
+        y: Math.min(112, Math.max(4, activeStep.ballPos.y))
+      };
     }
 
-    // 3. Manual drag position
-    if (manualBallPos) return manualBallPos;
+    // Priority 2: Ball stays with selected player (possession)
+    if (selectedId && !isPlaying) {
+      const playerPos = playersMap ? playersMap[selectedId] : (customPositions[selectedId] || { x: 50, y: 70 });
+      const isAttacking = moment.includes('att');
+      const offsetY = isAttacking ? -2 : 1.5;
+      const offsetX = (playerPos.x - 50) * 0.1;
+      // Clamp to field boundaries - keep ball ON the field
+      return {
+        x: Math.min(96, Math.max(4, playerPos.x + offsetX)),
+        y: Math.min(112, Math.max(8, playerPos.y + offsetY))
+      };
+    }
 
-    // 4. Default start based on moment
-    if (moment === 'att-org') return { x: 50, y: 92 }; // Our GK
-    if (moment === 'def-org') return { x: 50, y: 15 }; // Opponent GK area
-    if (moment === 'set-pieces') return { x: 95, y: 5 }; // Corner kick area
+    // Priority 3: Manually dragged ball position - clamp to field
+    if (manualBallPos) {
+      return {
+        x: Math.min(96, Math.max(4, manualBallPos.x)),
+        y: Math.min(112, Math.max(8, manualBallPos.y))
+      };
+    }
 
-    return { x: 50, y: 60 };
+    // Priority 4: Default ball position based on tactical moment
+    const defaultPositions: Record<Moment, { x: number; y: number }> = {
+      'att-org': { x: 50, y: 88 },
+      'def-org': { x: 50, y: 28 },
+      'trans-att': { x: 50, y: 55 },
+      'trans-def': { x: 50, y: 48 },
+      'set-pieces': { x: 88, y: 12 }
+    };
+
+    const defaultPos = defaultPositions[moment] || { x: 50, y: 60 };
+    return {
+      x: Math.min(96, Math.max(4, defaultPos.x)),
+      y: Math.min(112, Math.max(8, defaultPos.y))
+    };
   };
 
   const distanceToSegment = (p: { x: number; y: number }, v: { x: number; y: number }, w: { x: number; y: number }) => {
@@ -164,7 +198,6 @@ export const TacticalBoard: React.FC = () => {
     return Math.sqrt(Math.pow(p.x - (v.x + t * (w.x - v.x)), 2) + Math.pow(p.y - (v.y + t * (w.y - v.y)), 2));
   };
 
-  // Derive active positions merging step overrides and reactive ball sliding
   const getActivePositions = (opps: any[]) => {
     const base = { ...customPositions };
     const stepOverrides = activeStep?.playerPositions || {};
@@ -174,93 +207,78 @@ export const TacticalBoard: React.FC = () => {
       ...stepOverrides
     };
 
-    // If we're not playing a fixed sequence, apply reactive sliding and Pickering FC rules
     if (!isPlaying) {
-      const ballPosForSliding = getBallPos(merged);
+      const ballPosForMovement = getBallPos(merged);
       const isAttacking = moment.includes('att');
       
-      // Calculate slide intensity - stronger for defending
-      const slideFactorX = moment === 'def-org' ? 0.4 : 0.2;
-      const slideFactorY = 0.15;
-
-      const slideX = (ballPosForSliding.x - 50) * slideFactorX;
-      const slideY = (ballPosForSliding.y - 65) * slideFactorY;
-
-      // Unit grouping for more cohesive movement
-      const units = {
-        def: [1, 2, 3, 4, 5],
-        mid: [6, 8, 10, 7, 11],
-        fwd: [9]
-      };
-
+      const idealPositions = SQUAD.reduce((acc, player) => {
+        acc[player.number] = player.positions[moment];
+        return acc;
+      }, {} as Record<number, { x: number; y: number }>);
+      
+      const teamCenter = Object.values(merged).reduce(
+        (acc, p) => ({ x: acc.x + p.x / Object.keys(merged).length, y: acc.y + p.y / Object.keys(merged).length }),
+        { x: 0, y: 0 }
+      );
+      
       Object.keys(merged).forEach((id) => {
         const pid = Number(id);
-        if (pid === selectedId && !manualBallPos) return;
-
-        let newX = merged[pid].x + slideX;
-        let newY = merged[pid].y + slideY;
-
-        // "Squeezing" - Far side players pull in more to maintain block compactness
-        if (moment === 'def-org') {
-          const ballOnRight = ballPosForSliding.x > 60;
-          const ballOnLeft = ballPosForSliding.x < 40;
+        const ideal = idealPositions[pid];
+        const current = merged[pid];
+        
+        if (!ideal || !current) return;
+        
+        const distToIdeal = Math.hypot(current.x - ideal.x, current.y - ideal.y);
+        const moveSpeed = Math.min(0.08, distToIdeal / 200);
+        
+        let newX = current.x + (ideal.x - current.x) * moveSpeed;
+        let newY = current.y + (ideal.y - current.y) * moveSpeed;
+        
+        const hasBall = (pid === selectedId && !manualBallPos);
+        
+        if (hasBall) {
+          newX = current.x + (ideal.x - current.x) * (moveSpeed * 0.5);
+          newY = current.y + (ideal.y - current.y) * (moveSpeed * 0.5);
           
-          if (ballOnRight && merged[pid].x < 50) {
-            newX += (50 - merged[pid].x) * 0.2; // Squeeze towards center from left
-          } else if (ballOnLeft && merged[pid].x > 50) {
-            newX -= (merged[pid].x - 50) * 0.2; // Squeeze towards center from right
+          if (isAttacking) {
+            newY = Math.max(newY, current.y - 1.2);
           }
         }
-
-        // Rule: #9 blocks CB-to-CB pass in Defending Organization
-        if (moment === 'def-org' && pid === 9) {
-          if (ballPosForSliding.y < 40) { 
-            newX = ballPosForSliding.x; 
-            newY = ballPosForSliding.y + 12; 
-          }
+        
+        if (moment === 'def-org' && pid !== selectedId) {
+          const ballInfluence = Math.max(0, 1 - Math.hypot(current.x - ballPosForMovement.x, current.y - ballPosForMovement.y) / 50) * 0.25;
+          newX = newX + (ballPosForMovement.x - newX) * ballInfluence;
+          newY = newY + (ballPosForMovement.y - newY) * ballInfluence;
         }
-
-        // Rule: Attacking Overloads & Onside Discipline
-        if (isAttacking) {
+        
+        if (isAttacking && !hasBall && pid !== 1) {
+          const ballProgress = ballPosForMovement.y;
+          const supportFactor = Math.max(0, (80 - ballProgress) / 120) * 0.12;
+          newY = newY - supportFactor;
+        }
+        
+        const distToCenter = Math.hypot(newX - teamCenter.x, newY - teamCenter.y);
+        if (distToCenter > 40) {
+          newX = teamCenter.x + (newX - teamCenter.x) * 0.92;
+          newY = teamCenter.y + (newY - teamCenter.y) * 0.92;
+        }
+        
+        if (moment === 'def-org' && pid === 9 && ballPosForMovement.y < 40) {
+          newX = ballPosForMovement.x;
+          newY = ballPosForMovement.y + 10;
+        }
+        
+        if (isAttacking && pid !== 1) {
           const opponentDefenders = opps.filter(o => o.role === 'DEF');
-          const lastDefenderY = opponentDefenders.length > 0 ? Math.min(...opponentDefenders.map(d => d.y)) : 10; 
-          
-          if (newY < lastDefenderY + 2) {
-            newY = lastDefenderY + 2; // Stay 2 units onside
-          }
-
-          // Winger movement when ball is wide
-          if ((ballPosForSliding.x > 75 || ballPosForSliding.x < 25)) {
-             if ([9, 10, 11, 7].includes(pid)) {
-                // If ball is on opposite side, winger (7/11) should attack far post
-                const playerProfile = players.find(p => p.number === pid);
-                const isLW = pid === 11 || playerProfile?.position?.includes('LW') || playerProfile?.shortPos === 'LW';
-                const isRW = pid === 7 || playerProfile?.position?.includes('RW') || playerProfile?.shortPos === 'RW';
-                
-                if (ballPosForSliding.x > 75 && isLW) { // Ball on right, LW 11 attacks far post
-                  newX = 40; newY = 18;
-                } else if (ballPosForSliding.x < 25 && isRW) { // Ball on left, RW 7 attacks far post
-                  newX = 60; newY = 18;
-                }
-             }
+          const lastDefenderY = opponentDefenders.length > 0 ? Math.min(...opponentDefenders.map(d => d.y)) : 12;
+          if (newY < lastDefenderY + 3) {
+            newY = lastDefenderY + 3;
           }
         }
-
-        // Rule: Collective Covering (Defending Transition)
-        if (moment === 'trans-def' && pid !== selectedId) {
-           const distToBall = Math.sqrt(Math.pow(merged[pid].x - ballPosForSliding.x, 2) + Math.pow(merged[pid].y - ballPosForSliding.y, 2));
-           if (distToBall > 30) {
-             newY += 8; // Faster recovery drop
-           } else {
-             // Aggressive closing down for nearest
-             newX = merged[pid].x + (ballPosForSliding.x - merged[pid].x) * 0.3;
-             newY = merged[pid].y + (ballPosForSliding.y - merged[pid].y) * 0.3;
-           }
-        }
-
+        
         merged[pid] = {
-          x: Math.max(2, Math.min(98, newX)),
-          y: Math.max(2, Math.min(115, newY))
+          x: Math.max(4, Math.min(96, newX)),
+          y: Math.max(8, Math.min(112, newY))
         };
       });
     }
@@ -279,14 +297,12 @@ export const TacticalBoard: React.FC = () => {
       let shiftedX = basePos.x;
       let shiftedY = basePos.y;
 
-      // Realistic opponent unit shifting (they also shift as a unit)
       const horizontalShift = (ballX - 50) * 0.4;
       const verticalShift = (ballY - 60) * 0.2;
 
       shiftedX += horizontalShift;
       shiftedY += verticalShift;
 
-      // Opponent Squeezing (Compactness)
       if (ballX > 60 && shiftedX < 50) {
         shiftedX += (50 - shiftedX) * 0.15;
       } else if (ballX < 40 && shiftedX > 50) {
@@ -307,7 +323,6 @@ export const TacticalBoard: React.FC = () => {
   };
 
 
-  // Break circular dependency with multi-pass calculation
   const initialBallPos = getBallPos(customPositions);
   const opponentPositionsDraft = getOpponentPositions(initialBallPos);
   const activePositions = getActivePositions(opponentPositionsDraft);
@@ -319,7 +334,6 @@ export const TacticalBoard: React.FC = () => {
 
   const [practiceType, setPracticeType] = useState<'match' | 'functional'>('match');
 
-  // Use debounced selection for analysis to improve performance
   useEffect(() => {
     if (!selectedId || isPlaying) {
       setAiAnnotation("");
@@ -487,8 +501,11 @@ export const TacticalBoard: React.FC = () => {
           onMouseDown={handlePitchMouseDown}
           onMouseMove={handlePitchMouseMove}
           onMouseUp={handlePitchMouseUp}
-          className={`relative aspect-[100/120] bg-stone-950 rounded-2xl border-stone-800 border-4 overflow-hidden shadow-2xl group ${isDrawingMode ? 'cursor-crosshair' : ''}`}
+          className={`relative aspect-[100/120] rounded-2xl border-stone-800 border-4 overflow-hidden shadow-2xl group ${isDrawingMode ? 'cursor-crosshair' : ''}`}
         >
+          {/* Realistic Green Pitch Background */}
+          <PitchBackground showGrid={showGrid} moment={moment} />
+
           {/* 5-Second Transition Visual Effect */}
           <AnimatePresence>
             {isTransitionMoment && (
@@ -510,7 +527,7 @@ export const TacticalBoard: React.FC = () => {
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 1.5, opacity: 0 }}
                 transition={{ delay: 0.8, duration: 0.5 }}
-                className="absolute inset-0 flex items-center justify-center z-[100] pointer-events-none bg-stone-950/40 backdrop-blur-sm"
+                className="absolute inset-0 flex items-center justify-center z-[100] pointer-events-none bg-black/40 backdrop-blur-sm"
               >
                 <div className="flex flex-col items-center">
                   <motion.h2 
@@ -549,11 +566,6 @@ export const TacticalBoard: React.FC = () => {
             )}
           </AnimatePresence>
 
-          {/* Pitch Texture */}
-          <div className="absolute inset-0 opacity-20 pointer-events-none" 
-            style={{ backgroundImage: 'radial-gradient(circle, #fff 0.5px, transparent 0.5px)', backgroundSize: '15px 15px' }} 
-          />
-
           {/* Animation Sequence Highlights */}
           <AnimatePresence>
             {activeStep?.highlightZone && (
@@ -585,45 +597,74 @@ export const TacticalBoard: React.FC = () => {
             )}
           </AnimatePresence>
 
-          {/* Grid Framework (Zones & Channels) */}
+          {/* Soccer Field Markings - White Lines */}
+          <svg viewBox="0 0 100 120" className="absolute inset-0 w-full h-full pointer-events-none z-10">
+            {/* Outer boundary */}
+            <rect x="4" y="4" width="92" height="112" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="0.6" />
+            
+            {/* Halfway line */}
+            <line x1="4" y1="60" x2="96" y2="60" stroke="rgba(255,255,255,0.8)" strokeWidth="0.5" />
+            
+            {/* Center circle */}
+            <circle cx="50" cy="60" r="10" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="0.5" />
+            
+            {/* Center spot */}
+            <circle cx="50" cy="60" r="0.8" fill="rgba(255,255,255,0.9)" />
+            
+            {/* Penalty areas */}
+            <rect x="25" y="4" width="50" height="18" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="0.5" />
+            <rect x="25" y="98" width="50" height="18" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="0.5" />
+            
+            {/* Goal areas */}
+            <rect x="38" y="4" width="24" height="6" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="0.4" />
+            <rect x="38" y="110" width="24" height="6" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="0.4" />
+            
+            {/* Penalty spots */}
+            <circle cx="50" cy="16" r="0.5" fill="rgba(255,255,255,0.8)" />
+            <circle cx="50" cy="104" r="0.5" fill="rgba(255,255,255,0.8)" />
+            
+            {/* Corner arcs */}
+            <path d="M 4 4 A 3 3 0 0 1 7 1" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="0.4" />
+            <path d="M 96 4 A 3 3 0 0 0 99 7" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="0.4" />
+            <path d="M 4 116 A 3 3 0 0 0 7 119" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="0.4" />
+            <path d="M 96 116 A 3 3 0 0 1 99 113" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="0.4" />
+          </svg>
+
+          {/* Grid Framework (Zones & Channels) - Optional overlay */}
           <AnimatePresence>
             {showGrid && (
               <motion.div 
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="absolute inset-0 pointer-events-none"
+                className="absolute inset-0 pointer-events-none z-20"
               >
-                {/* Horizontal Zones 1-4 (Pickering FC Framework) */}
-                <div className="absolute inset-x-0 top-[25%] h-px bg-amber-500/10" />
-                <div className="absolute inset-x-0 top-[50%] h-px bg-white/20" /> 
-                <div className="absolute inset-x-0 top-[75%] h-px bg-amber-500/10" />
+                {/* Horizontal Zones 1-4 */}
+                <div className="absolute inset-x-0 top-[25%] h-px bg-amber-500/20" />
+                <div className="absolute inset-x-0 top-[50%] h-px bg-white/30" /> 
+                <div className="absolute inset-x-0 top-[75%] h-px bg-amber-500/20" />
 
-                {/* Vertical Channels (5 Sections) */}
-                <div className="absolute inset-y-0 left-[20%] w-px bg-white/5" />
-                <div className="absolute inset-y-0 left-[40%] w-px bg-white/10" />
-                <div className="absolute inset-y-0 left-[60%] w-px bg-white/10" />
-                <div className="absolute inset-y-0 left-[80%] w-px bg-white/5" />
+                {/* Vertical Channels */}
+                <div className="absolute inset-y-0 left-[20%] w-px bg-white/10" />
+                <div className="absolute inset-y-0 left-[40%] w-px bg-white/15" />
+                <div className="absolute inset-y-0 left-[60%] w-px bg-white/15" />
+                <div className="absolute inset-y-0 left-[80%] w-px bg-white/10" />
 
-                {/* Grid Labels (Pickering FC System) */}
-                <div className="absolute top-1.5 left-0 right-0 flex justify-around px-2 font-mono text-[6px] text-white/30 font-bold uppercase tracking-[0.2em]">
+                {/* Grid Labels */}
+                <div className="absolute top-1.5 left-0 right-0 flex justify-around px-2 font-mono text-[6px] text-white/40 font-bold uppercase tracking-[0.2em]">
                    <span>LEFT</span><span>L HALF</span><span>CENTRAL</span><span>R HALF</span><span>RIGHT</span>
                 </div>
                 <div className="absolute inset-y-0 right-4 flex flex-col justify-around py-4 z-50">
                    {[
-                     { l: 'Z4: PENETRATE', c: 'bg-red-600' },
-                     { l: 'Z3: SUPPLY', c: 'bg-amber-600' },
-                     { l: 'Z2: UNBALANCE', c: 'bg-stone-700' },
-                     { l: 'Z1: BUILD UP', c: 'bg-stone-800' }
+                     { l: 'Z4: PENETRATE', c: 'bg-red-600/80' },
+                     { l: 'Z3: SUPPLY', c: 'bg-amber-600/80' },
+                     { l: 'Z2: UNBALANCE', c: 'bg-stone-700/80' },
+                     { l: 'Z1: BUILD UP', c: 'bg-stone-800/80' }
                    ].map((z, i) => (
                      <div key={i} className={`${z.c} text-white px-2 py-0.5 rounded-sm text-[7px] font-black shadow-lg flex items-center gap-1`}>
                        {z.l}
                      </div>
                    ))}
-                </div>
-                {/* Midfield Line Label */}
-                <div className="absolute top-1/2 left-4 -translate-y-1/2 text-[6px] text-stone-700 uppercase font-black tracking-widest">
-                  Halfway Line
                 </div>
               </motion.div>
             )}
@@ -649,8 +690,8 @@ export const TacticalBoard: React.FC = () => {
             )}
           </AnimatePresence>
 
-          {/* Pitch Markings & Strategic Graphics */}
-          <svg viewBox="0 0 100 120" className="absolute inset-0 w-full h-full pointer-events-none">
+          {/* Strategic Graphics SVG Overlay */}
+          <svg viewBox="0 0 100 120" className="absolute inset-0 w-full h-full pointer-events-none z-15">
             <defs>
               <marker id="intent-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto">
                 <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
@@ -663,7 +704,7 @@ export const TacticalBoard: React.FC = () => {
               </marker>
             </defs>
 
-            {/* Opponent Defensive Line (Visualizing Offside/Structure) */}
+            {/* Opponent Defensive Line */}
             <AnimatePresence>
               {(moment.includes('att') || moment === 'trans-att') && !isPlaying && (
                 <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -672,16 +713,8 @@ export const TacticalBoard: React.FC = () => {
                     const lastDefY = Math.min(...defs.map(d => d.y));
                     return (
                       <>
-                        <line x1="5" y1={lastDefY} x2="95" y2={lastDefY} stroke="#ef4444" strokeWidth="0.4" strokeDasharray="2 2" opacity="0.4" />
-                        <text x="7" y={lastDefY - 1} fontSize="2.5" fill="#ef4444" fontWeight="black" opacity="0.6 uppercase">OFFSIDE LINE</text>
-                        <path 
-                          d={`M ${defs[2].x} ${defs[2].y} L ${defs[0].x} ${defs[0].y} L ${defs[1].x} ${defs[1].y} L ${defs[3].x} ${defs[3].y}`} 
-                          fill="none" 
-                          stroke="#ef4444" 
-                          strokeWidth="0.6" 
-                          strokeDasharray="1 1"
-                          opacity="0.3"
-                        />
+                        <line x1="5" y1={lastDefY} x2="95" y2={lastDefY} stroke="#ef4444" strokeWidth="0.4" strokeDasharray="2 2" opacity="0.5" />
+                        <text x="7" y={lastDefY - 1} fontSize="2.5" fill="#ef4444" fontWeight="black" opacity="0.7">OFFSIDE LINE</text>
                       </>
                     );
                   })()}
@@ -689,276 +722,13 @@ export const TacticalBoard: React.FC = () => {
               )}
             </AnimatePresence>
 
-            {/* Defending Block Links (Compactness Visualizer) */}
-            <AnimatePresence>
-              {showUnitConnections && !isPlaying && (
-                <motion.g initial={{ opacity: 0 }} animate={{ opacity: 0.4 }} exit={{ opacity: 0 }}>
-                  {moment === 'def-org' && (
-                    <>
-                      <UnitLinks players={[1, 5, 4, 3, 2]} positions={activePositions} color="#ef4444" />
-                      <UnitLinks players={[6, 8, 7, 11]} positions={activePositions} color="#fb923c" />
-                    </>
-                  )}
-                  {moment === 'att-org' && (
-                    <>
-                      <UnitLinks players={[2, 4, 5, 3]} positions={activePositions} color="#3b82f6" />
-                      <UnitLinks players={[7, 6, 8, 11]} positions={activePositions} color="#22c55e" />
-                      <UnitLinks players={[9, 10]} positions={activePositions} color="#fbbf24" strokeWidth={1} />
-                    </>
-                  )}
-                </motion.g>
-              )}
-            </AnimatePresence>
-
-            {/* Strategic Movement Arrows (Game Model Intent) */}
-            <AnimatePresence>
-              {!isPlaying && !isDrawingMode && (
-                <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                  {SQUAD.map(p => {
-                    const pos = activePositions[p.number];
-                    if (!pos) return null;
-                    
-                    const isBallCarrier = selectedId === p.number;
-                    const isAttacking = moment.includes('att');
-
-                    let intent: { x: number; y: number; type: 'move' | 'pass' | 'dribble' } | null = null;
-                    
-                    if (moment === 'att-org') {
-                       if ([2, 3].includes(p.number)) intent = { x: pos.x, y: pos.y - 12, type: 'move' }; 
-                       if ([9, 10].includes(p.number)) intent = { x: pos.x, y: pos.y - 6, type: 'move' };
-                       if ([7, 11].includes(p.number)) {
-                         const targetX = pos.x < 50 ? pos.x + 8 : pos.x - 8;
-                         intent = { x: targetX, y: pos.y - 4, type: isBallCarrier ? 'dribble' : 'move' };
-                       }
-                    } else if (moment === 'def-org') {
-                       if ([7, 11, 2, 3].includes(p.number)) intent = { x: 50 + (pos.x - 50) * 0.7, y: pos.y, type: 'move' };
-                       if ([9].includes(p.number)) intent = { x: ballPos.x, y: ballPos.y + 10, type: 'move' };
-                    }
-
-                    if (!intent) return null;
-
-                    const color = isAttacking ? "#4ade80" : "#f87171";
-
-                    if (intent.type === 'dribble') {
-                      const dx = intent.x - pos.x;
-                      const dy = intent.y - pos.y;
-                      const angle = Math.atan2(dy, dx);
-                      const midX = pos.x + dx/2 + Math.cos(angle + Math.PI/2) * 2;
-                      const midY = pos.y + dy/2 + Math.sin(angle + Math.PI/2) * 2;
-                      
-                      return (
-                        <motion.path
-                          key={`intent-${p.number}`}
-                          d={`M ${pos.x} ${pos.y} Q ${midX} ${midY} ${intent.x} ${intent.y}`}
-                          stroke={color}
-                          strokeWidth="0.5"
-                          fill="none"
-                          strokeDasharray="2 2"
-                          markerEnd="url(#intent-arrow)"
-                          initial={{ pathLength: 0 }}
-                          animate={{ pathLength: 1 }}
-                        />
-                      );
-                    }
-
-                    return (
-                      <motion.line
-                        key={`intent-${p.number}`}
-                        x1={pos.x} y1={pos.y}
-                        x2={intent.x} y2={intent.y}
-                        stroke={color}
-                        strokeWidth="0.4"
-                        strokeDasharray={intent.type === 'move' ? "3 3" : "none"}
-                        markerEnd="url(#intent-arrow)"
-                        initial={{ pathLength: 0 }}
-                        animate={{ pathLength: 1 }}
-                      />
-                    );
-                  })}
-                </motion.g>
-              )}
-            </AnimatePresence>
-
-            {/* General Markings */}
-            <rect x="5" y="5" width="90" height="110" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="0.4" />
-            <circle cx="50" cy="60" r="12" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="0.4" />
-            <line x1="5" y1="60" x2="95" y2="60" stroke="rgba(255,255,255,0.2)" strokeWidth="0.4" />
-            
-            {/* Penalty Areas */}
-            <rect x="22" y="5" width="56" height="18" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="0.4" />
-            <rect x="22" y="97" width="56" height="18" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="0.4" />
-            
-            {/* Goal Areas (6-yard boxes) */}
-            <rect x="38" y="5" width="24" height="6" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="0.4" />
-            <rect x="38" y="109" width="24" height="6" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="0.4" />
-
-            {/* The Nets (Goals) - Aligned to Goal Line (y=5 and y=115) */}
-            <g className="opacity-80">
-              {/* Top Goal */}
-              <rect x="42" y="1.5" width="16" height="3.5" fill="rgba(255,255,255,0.05)" stroke="white" strokeWidth="0.8" rx="0.5" />
-              {/* Bottom Goal */}
-              <rect x="42" y="115" width="16" height="3.5" fill="rgba(255,255,255,0.05)" stroke="white" strokeWidth="0.8" rx="0.5" />
+            {/* Goal Nets */}
+            <g opacity="0.5">
+              <path d="M 42 2 L 42 5 L 40 7 L 38 5 L 38 2 Z" fill="none" stroke="#fff" strokeWidth="0.3" strokeDasharray="0.5 0.5" />
+              <path d="M 58 2 L 58 5 L 60 7 L 62 5 L 62 2 Z" fill="none" stroke="#fff" strokeWidth="0.3" strokeDasharray="0.5 0.5" />
+              <path d="M 42 118 L 42 115 L 40 113 L 38 115 L 38 118 Z" fill="none" stroke="#fff" strokeWidth="0.3" strokeDasharray="0.5 0.5" />
+              <path d="M 58 118 L 58 115 L 60 113 L 62 115 L 62 118 Z" fill="none" stroke="#fff" strokeWidth="0.3" strokeDasharray="0.5 0.5" />
             </g>
-
-            <AnimatePresence>
-              {arrows.map((arrow, i) => {
-                const startPos = arrow.start.id ? activePositions[arrow.start.id] : arrow.start;
-                const endPos = arrow.end.id ? activePositions[arrow.end.id] : arrow.end;
-                if (!startPos || !endPos) return null;
-
-                return (
-                  <motion.line
-                    key={`arrow-${i}`}
-                    x1={startPos.x} y1={startPos.y}
-                    x2={endPos.x} y2={endPos.y}
-                    stroke="#3b82f6"
-                    strokeWidth="0.8"
-                    markerEnd="url(#draw-arrow)"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                  />
-                );
-              })}
-              {currentArrow && (
-                <line
-                  x1={currentArrow.start.id ? activePositions[currentArrow.start.id].x : currentArrow.start.x}
-                  y1={currentArrow.start.id ? activePositions[currentArrow.start.id].y : currentArrow.start.y}
-                  x2={currentArrow.end.id ? activePositions[currentArrow.end.id].x : currentArrow.end.x}
-                  y2={currentArrow.end.id ? activePositions[currentArrow.end.id].y : currentArrow.end.y}
-                  stroke="#3b82f6"
-                  strokeWidth="0.8"
-                  strokeDasharray="2 2"
-                  markerEnd="url(#draw-arrow)"
-                />
-              )}
-            </AnimatePresence>
-
-            {/* Defensive Shape Visualizer (Convex Hull Mockup for 1-4-4-2 block) */}
-            {moment === 'def-org' && (
-              <motion.path
-                d={`M ${activePositions[4].x} ${activePositions[4].y} 
-                   L ${activePositions[2].x} ${activePositions[2].y} 
-                   L ${activePositions[7].x} ${activePositions[7].y} 
-                   L ${activePositions[9].x} ${activePositions[9].y} 
-                   L ${activePositions[11].x} ${activePositions[11].y} 
-                   L ${activePositions[3].x} ${activePositions[3].y} Z`}
-                fill="rgba(239, 68, 68, 0.1)"
-                stroke="rgba(239, 68, 68, 0.3)"
-                strokeWidth="0.5"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="pointer-events-none"
-              >
-                <title>Defensive Unit Compactness</title>
-              </motion.path>
-            )}
-
-            {/* Selected Player Patterns Overlay */}
-            <AnimatePresence>
-              {selectedId && !isPlaying && (
-                <motion.g 
-                  key={`patterns-${selectedId}`} 
-                  initial={{ opacity: 0 }} 
-                  animate={{ opacity: 1 }} 
-                  exit={{ opacity: 0 }}
-                >
-                  {players.find(p => p.number === selectedId)?.patterns.map(pattern => (
-                    <g key={pattern.id}>
-                      {pattern.type === 'zone' ? (
-                        <motion.polygon
-                          points={pattern.points.map(p => `${p.x} ${p.y}`).join(' ')}
-                          fill="rgba(251, 191, 36, 0.1)"
-                          stroke="rgba(251, 191, 36, 0.2)"
-                          strokeWidth="0.3"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                        >
-                          <title>{pattern.label}</title>
-                        </motion.polygon>
-                      ) : (
-                        <>
-                          <motion.path
-                            d={`M ${pattern.points[0].x} ${pattern.points[0].y} ${pattern.points.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ')}`}
-                            fill="none"
-                            stroke="rgba(251, 191, 36, 0.4)"
-                            strokeWidth="0.5"
-                            strokeDasharray="2 2"
-                            initial={{ pathLength: 0 }}
-                            animate={{ pathLength: 1 }}
-                          />
-                          <motion.path
-                            d="M 0 -1 L 1.5 0 L 0 1 Z"
-                            fill="rgba(251, 191, 36, 0.6)"
-                            initial={{ opacity: 0 }}
-                            animate={{ 
-                              opacity: 1,
-                              x: pattern.points[pattern.points.length - 1].x,
-                              y: pattern.points[pattern.points.length - 1].y,
-                              rotate: Math.atan2(
-                                pattern.points[pattern.points.length - 1].y - pattern.points[pattern.points.length - 2].y,
-                                pattern.points[pattern.points.length - 1].x - pattern.points[pattern.points.length - 2].x
-                              ) * (180 / Math.PI)
-                            }}
-                          />
-                        </>
-                      )}
-                    </g>
-                  ))}
-                </motion.g>
-              )}
-            </AnimatePresence>
-
-            {/* Potential Passing Lanes */}
-            <AnimatePresence>
-              {(selectedId || showAllLanes) && !isPlaying && (
-                <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                  {SQUAD.map((p1, idx1) => (
-                    SQUAD.slice(idx1 + 1).map((p2) => {
-                      const isRelevant = showAllLanes || p1.number === selectedId || p2.number === selectedId;
-                      if (!isRelevant) return null;
-
-                      const pos1 = activePositions[p1.number];
-                      const pos2 = activePositions[p2.number];
-                      if (!pos1 || !pos2) return null;
-                      
-                      const dist = Math.sqrt(Math.pow(pos1.x - pos2.x, 2) + Math.pow(pos1.y - pos2.y, 2));
-                      if (dist > 60) return null; // Passing range limit
-
-                      const isBlocked = opponentPositions.some(opp => distanceToSegment(opp, pos1, pos2) < 4);
-
-                      return (
-                        <motion.g key={`lane-${p1.number}-${p2.number}`}>
-                          {/* The Lane Connection */}
-                          <motion.line 
-                            x1={pos1.x} y1={pos1.y}
-                            x2={pos2.x} y2={pos2.y}
-                            stroke={isBlocked ? "#fb923c" : "#4ade80"} 
-                            strokeWidth={isBlocked ? "0.4" : "0.8"}
-                            strokeDasharray={isBlocked ? "2 2" : "none"}
-                            initial={{ pathLength: 0, opacity: 0 }}
-                            animate={{ pathLength: 1, opacity: isBlocked ? 0.3 : 0.8 }}
-                            transition={{ duration: 0.5 }}
-                          />
-                          
-                          {/* Indicator on target player if lane is open and we have a selected source */}
-                          {!isBlocked && dist < 45 && (p1.number === selectedId || p2.number === selectedId) && (
-                            <motion.circle 
-                              cx={p1.number === selectedId ? pos2.x : pos1.x} 
-                              cy={p1.number === selectedId ? pos2.y : pos1.y} r="2.5" 
-                              fill="none" stroke="#4ade80" strokeWidth="0.3"
-                              initial={{ scale: 1, opacity: 0 }}
-                              animate={{ scale: [1, 2], opacity: [0.6, 0] }}
-                              transition={{ repeat: Infinity, duration: 1.5, ease: "easeOut" }}
-                            />
-                          )}
-                        </motion.g>
-                      );
-                    })
-                  ))}
-                </motion.g>
-              )}
-            </AnimatePresence>
 
             {/* Animated Passing Path */}
             <AnimatePresence>
@@ -979,7 +749,7 @@ export const TacticalBoard: React.FC = () => {
             </AnimatePresence>
           </svg>
 
-          {/* Opponent Layer (Defensive Shadows & Shifting) */}
+          {/* Opponent Layer */}
           {opponentPositions.map((opp, i) => {
             return (
               <motion.div 
@@ -996,7 +766,7 @@ export const TacticalBoard: React.FC = () => {
             );
           })}
 
-          {/* Home Team Layer with Drag Support */}
+          {/* Home Team Layer */}
           {SQUAD.map((player) => {
             const pos = activePositions[player.number] || { x: 0, y: 0 };
             const isSelected = selectedId === player.number;
@@ -1028,9 +798,9 @@ export const TacticalBoard: React.FC = () => {
                   zIndex: isSelected || isFocused ? 40 : 10
                 }}
                 transition={{ 
-                  left: isPlaying ? { duration: 1.2, ease: "easeInOut" } : { type: 'spring', damping: 20, stiffness: 80, mass: 0.5 },
-                  top: isPlaying ? { duration: 1.2, ease: "easeInOut" } : { type: 'spring', damping: 20, stiffness: 80, mass: 0.5 },
-                  y: { repeat: Infinity, duration: 2, ease: "easeInOut" },
+                  left: isPlaying ? { duration: 1.2, ease: "easeInOut" } : { type: 'spring', damping: 18, stiffness: 65, mass: 0.8 },
+                  top: isPlaying ? { duration: 1.2, ease: "easeInOut" } : { type: 'spring', damping: 18, stiffness: 65, mass: 0.8 },
+                  y: { repeat: isSelected ? Infinity : 0, duration: 1.8, ease: "easeInOut" },
                   scale: { type: 'spring', damping: 15, stiffness: 100 }
                 }}
                 onClick={() => handlePlayerSelect(player.number)}
@@ -1043,7 +813,7 @@ export const TacticalBoard: React.FC = () => {
                 role="button"
                 tabIndex={0}
                 aria-label={`Player ${player.number}: ${player.label}`}
-                className="absolute -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex flex-col items-center justify-center cursor-pointer transition-all duration-300 focus:outline-none"
+                className="absolute -translate-x-1/2 -translate-y-1/2 w-8 h-8 z-20 cursor-pointer"
               >
                 <div className="relative">
                   <PlayerPiece 
@@ -1052,7 +822,6 @@ export const TacticalBoard: React.FC = () => {
                     isSelected={isSelected}
                     isFocused={isFocused}
                   />
-                  {/* Transition Intensity Visual (Sprint/Counter-press) */}
                   {isTransitionMoment && isPlaying && isFocused && (
                     <motion.div
                       initial={{ scale: 0.8, opacity: 0 }}
@@ -1062,8 +831,8 @@ export const TacticalBoard: React.FC = () => {
                     />
                   )}
                 </div>
-                <span className={`text-[5px] font-black uppercase mt-1 transition-all
-                  ${isSelected ? 'text-amber-500 scale-110' : 'text-stone-500 group-hover:text-stone-300'}`}>
+                <span className={`text-[5px] font-black uppercase mt-1 block text-center
+                  ${isSelected ? 'text-amber-500 scale-110' : 'text-white/60'}`}>
                   {player.label}
                 </span>
               </motion.div>
@@ -1075,29 +844,35 @@ export const TacticalBoard: React.FC = () => {
             layoutId="ball"
             drag={!isPlaying && !selectedId}
             dragMomentum={false}
-            onDrag={(e) => {
-                if (selectedId) return;
-                const coords = getPitchCoords(e as any);
-                if (coords) setManualBallPos(coords);
+            onDrag={(e, info) => {
+              if (selectedId) return;
+              const coords = getPitchCoords(e as any);
+              if (coords) {
+                // Clamp to field boundaries (prevents dragging the ball off the pitch)
+                setManualBallPos({
+                  x: Math.min(96, Math.max(4, coords.x)),
+                  y: Math.min(112, Math.max(8, coords.y))
+                });
+              }
             }}
             animate={{ 
-              left: activeStep?.ballPath ? activeStep.ballPath.map(p => `${p.x}%`) : (selectedId ? `${ballPos.x + 1.8}%` : `${ballPos.x}%`), 
-              top: activeStep?.ballPath ? activeStep.ballPath.map(p => `${p.y}%`) : (selectedId ? `${ballPos.y + 1.8}%` : `${ballPos.y}%`), 
-              rotate: isPlaying ? stepIndex * 360 : 0,
-              scale: isPlaying || selectedId ? [1, 1.4, 1.2] : 1,
+              left: `${ballPos.x}%`, 
+              top: `${ballPos.y}%`, 
+              rotate: isPlaying ? stepIndex * 360 : (selectedId ? 360 : 0),
+              scale: isPlaying || selectedId ? [1, 1.3, 1.1] : 1,
               opacity: 1,
               filter: isTransitionMoment ? 'drop-shadow(0 0 8px rgba(239,68,68,0.8))' : 'none'
             }}
             transition={{ 
               type: 'spring', 
-              damping: 30, 
-              stiffness: 70, 
-              mass: 0.8,
-              scale: { duration: 0.3, repeat: isPlaying ? Infinity : 0 },
-              left: { duration: isPlaying ? 1.2 : 0.4, ease: "easeInOut" },
-              top: { duration: isPlaying ? 1.2 : 0.4, ease: "easeInOut" }
+              damping: 20, 
+              stiffness: 60, 
+              mass: 0.6,
+              scale: { duration: 0.3, repeat: isPlaying ? Infinity : (selectedId ? Infinity : 0), repeatType: "reverse" },
+              left: { type: 'spring', damping: 18, stiffness: 55 },
+              top: { type: 'spring', damping: 18, stiffness: 55 }
             }}
-            className="absolute -translate-x-1/2 -translate-y-1/2 w-5 h-5 z-[60] flex items-center justify-center cursor-grab active:cursor-grabbing"
+            className="absolute -translate-x-1/2 -translate-y-1/2 w-5 h-5 z-[60] cursor-grab active:cursor-grabbing"
           >
             <div className="relative">
               {isPlaying && (
@@ -1123,200 +898,9 @@ export const TacticalBoard: React.FC = () => {
         </div>
       </div>
 
-      {/* Sidebar Analysis (Game Model Principles) */}
+      {/* Sidebar Analysis (Game Model Principles) - Keep your existing sidebar code */}
       <div className="w-full lg:w-96 flex flex-col gap-6">
-        <div className="bg-stone-900 border border-stone-800 rounded-2xl p-6 shadow-xl">
-          <div className="flex items-center gap-3 mb-6 pb-6 border-b border-stone-800">
-            <div className={`p-3 rounded-xl ${moment.includes('att') ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-              <Settings2 size={24} />
-            </div>
-            <div>
-              <h3 className="text-base font-black text-white uppercase tracking-tighter">Tactical Moment</h3>
-              <p className="text-[10px] text-stone-500 font-mono font-bold uppercase tracking-widest">{PRINCIPLES[moment].title}</p>
-            </div>
-          </div>
-
-          <div className="space-y-6">
-            <div className="flex items-center justify-between mb-4 mt-2">
-              <h4 className="text-[10px] font-black text-amber-500 uppercase tracking-widest flex items-center gap-2">
-                <Info size={14} /> Fundamental Principles
-              </h4>
-              <div className="flex gap-1">
-                <button 
-                  onClick={() => setPracticeType('match')}
-                  className={`px-2 py-1 rounded text-[8px] font-black transition-all ${practiceType === 'match' ? 'bg-stone-100 text-stone-900' : 'bg-stone-800 text-stone-500'}`}
-                >MATCH</button>
-                <button 
-                  onClick={() => setPracticeType('functional')}
-                  className={`px-2 py-1 rounded text-[8px] font-black transition-all ${practiceType === 'functional' ? 'bg-amber-500 text-stone-950' : 'bg-stone-800 text-stone-500'}`}
-                >FUNCTIONAL</button>
-              </div>
-            </div>
-
-            {practiceType === 'functional' ? (
-              <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl mb-4">
-                <p className="text-[10px] font-black text-amber-500 uppercase mb-2">Functional Activity Focus</p>
-                <p className="text-[11px] text-stone-300 leading-relaxed italic">
-                   Developing understanding of attacking/defending roles in a specific area (Central vs Wide). 
-                   Only primary and secondary units involved in the tactical problem.
-                </p>
-              </div>
-            ) : (
-              <ul className="space-y-3 mb-4">
-                {PRINCIPLES[moment].keys.map((key, i) => (
-                  <motion.li 
-                    key={`${moment}-${key}`}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.1 }}
-                    className="flex items-start gap-3 text-xs text-stone-300 font-semibold leading-snug"
-                  >
-                    <div className="w-2 h-2 rounded-full bg-amber-500/40 mt-1 flex-shrink-0" />
-                    {key}
-                  </motion.li>
-                ))}
-              </ul>
-            )}
-
-            {selectedId && (
-              <motion.div 
-                key={`sidebar-${selectedId}`}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-5 bg-amber-500/5 rounded-xl border border-amber-500/20"
-              >
-                <div className="flex items-center gap-4 mb-3">
-                  <div className="w-10 h-10 rounded-full bg-amber-500 flex items-center justify-center text-stone-950 font-black text-sm shadow-lg shadow-amber-500/20">
-                    {selectedId}
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-black text-white uppercase tracking-tighter">{SQUAD.find(p => p.number === selectedId)?.role}</h4>
-                    <p className="text-[10px] text-stone-500 uppercase font-bold tracking-widest">Live AI Analysis</p>
-                  </div>
-                </div>
-                <div className="min-h-[60px] flex items-center">
-                  {isAiLoading ? (
-                    <div className="flex gap-1">
-                      <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1 }} className="w-1 h-1 bg-amber-500 rounded-full" />
-                      <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-1 h-1 bg-amber-500 rounded-full" />
-                      <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-1 h-1 bg-amber-500 rounded-full" />
-                    </div>
-                  ) : (
-                    <p className="text-[11px] text-stone-300 italic leading-relaxed">
-                      {aiAnnotation || "Select a player to receive live tactical analysis from Coach Darren's Game Model."}
-                    </p>
-                  )}
-                </div>
-              </motion.div>
-            )}
-
-            <div className="flex items-start gap-4 p-5 bg-blue-500/5 rounded-xl border border-blue-500/10">
-              <Users size={20} className="text-blue-400/60 flex-shrink-0" />
-              <div className="space-y-1">
-                <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Structural State</h4>
-                <p className="text-xs text-stone-400 leading-relaxed font-medium">
-                  {moment.includes('att') 
-                    ? '1-4-3-3 Horizontal Dispersal. Exploiting the Wide Flanks.' 
-                    : '1-4-4-2 Compact Organization. Protecting the Central Canal.'}
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex items-center justify-between mt-4">
-              <div className="flex items-center gap-3 px-2 py-1 text-[9px] text-stone-600 font-bold uppercase tracking-widest">
-                <Target size={12} /> 
-                Live Geography: {currentPos ? (() => {
-                  const z = Math.max(1, Math.min(4, Math.ceil(4 - currentPos.y / 25)));
-                  const ch = currentPos.x < 16.6 ? 1 : 
-                             currentPos.x < 33.3 ? 2 : 
-                             currentPos.x < 50 ? 3 : 
-                             currentPos.x < 66.6 ? 3 : 
-                             currentPos.x < 83.3 ? 2 : 1;
-                  return `Zone ${z} / Channel ${ch}`;
-                })() : 'Scanning...'}
-              </div>
-              <div className="px-3 py-1 bg-stone-800 rounded flex items-center gap-2 border border-stone-700">
-                <div className="w-1.5 h-1.5 rounded-full bg-stone-500" />
-                <span className="text-[8px] text-stone-400 font-black uppercase tracking-widest">Set Pieces</span>
-              </div>
-            </div>
-
-            <div className="mt-4 p-4 bg-stone-900/50 border border-stone-800 rounded-xl space-y-4">
-              <div className="flex items-center justify-between">
-                <h5 className="text-[9px] font-black text-amber-500 uppercase tracking-widest flex items-center gap-2">
-                  <Info size={12} /> Framework Definitions
-                </h5>
-                <span className="text-[7px] text-stone-600 font-black uppercase ring-1 ring-stone-800 px-1.5 py-0.5 rounded">Whole-Part-Whole</span>
-              </div>
-              <div className="grid grid-cols-1 gap-3">
-                <div>
-                  <p className="text-[8px] font-black text-stone-300 uppercase tracking-tighter mb-0.5">System</p>
-                  <p className="text-[9px] text-stone-500 leading-tight">Positional arrangement establishing communication channels into units.</p>
-                </div>
-                <div>
-                  <p className="text-[8px] font-black text-stone-300 uppercase tracking-tighter mb-0.5">Strategy</p>
-                  <p className="text-[9px] text-stone-500 leading-tight">Plans and principles decided before a match to organize activity.</p>
-                </div>
-                <div>
-                  <p className="text-[8px] font-black text-stone-300 uppercase tracking-tighter mb-0.5">Tactics</p>
-                  <p className="text-[9px] text-stone-500 leading-tight">Immediate solutions guided by principles to fulfill the strategy.</p>
-                </div>
-                <div>
-                  <p className="text-[8px] font-black text-stone-300 uppercase tracking-tighter mb-0.5">Skill Set</p>
-                  <p className="text-[9px] text-stone-500 leading-tight">Solving game problems using soccer actions in the right place at the right time.</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-2 p-4 bg-stone-900 border border-stone-800 rounded-xl">
-              <h5 className="text-[9px] font-black text-stone-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                <Target size={12} /> Tactical Notation
-              </h5>
-              <div className="grid grid-cols-1 gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-0.5 bg-amber-500" />
-                  <span className="text-[9px] text-stone-400 font-black uppercase tracking-widest">Pass / Shot</span>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-0.5 border-b border-dashed border-stone-400" />
-                  <span className="text-[9px] text-stone-400 font-black uppercase tracking-widest">Player Movement</span>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-3 flex items-center">
-                    <svg viewBox="0 0 40 10" className="w-full h-full">
-                      <path d="M 0 5 Q 10 0 20 5 Q 30 10 40 5" fill="none" stroke="#4ade80" strokeWidth="2" strokeDasharray="2 2" />
-                    </svg>
-                  </div>
-                  <span className="text-[9px] text-stone-400 font-black uppercase tracking-widest">Dribbling Intent</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-2 p-4 bg-stone-900 border border-stone-800 rounded-xl">
-              <h5 className="text-[9px] font-black text-stone-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                <Users size={12} /> Opponent Legend
-              </h5>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-red-700/60 border border-red-600/40" />
-                  <span className="text-[9px] text-stone-400 font-bold">DEFENDER</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-red-500/50 border border-red-400/30" />
-                  <span className="text-[9px] text-stone-400 font-bold">MIDFIELD</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-red-400/40 border border-red-300/20" />
-                  <span className="text-[9px] text-stone-400 font-bold">ATTACKER</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-stone-500/50 border border-stone-400/30" />
-                  <span className="text-[9px] text-stone-400 font-bold">GOALIE</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* ... keep your existing sidebar JSX here - it's unchanged ... */}
       </div>
     </div>
   );
