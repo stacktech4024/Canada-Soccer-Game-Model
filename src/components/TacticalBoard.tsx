@@ -44,6 +44,12 @@ export const TacticalBoard: React.FC = () => {
   const [customPositions, setPlayerPositions] = useState<Record<number, { x: number; y: number }>>(
     Object.fromEntries(SQUAD.map(p => [p.number, p.positions[moment]]))
   );
+
+  // Passing animation state (ball moves while not playing)
+  const [passInProgress, setPassInProgress] = useState(false);
+  const [passFromId, setPassFromId] = useState<number | null>(null);
+  const [passToId, setPassToId] = useState<number | null>(null);
+  const [passStartAt, setPassStartAt] = useState<number | null>(null);
   const [currentFormation, setCurrentFormation] = useState('1-4-4-2');
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [arrows, setArrows] = useState<{ 
@@ -60,6 +66,11 @@ export const TacticalBoard: React.FC = () => {
 
   const [manualBallPos, setManualBallPos] = useState<{ x: number; y: number } | null>(null);
 
+  // Shooting animation state
+  const [shooting, setShooting] = useState(false);
+  const [goalTarget, setGoalTarget] = useState<{ x: number; y: number } | null>(null);
+
+
   // Auto-switch formations and reset ball on moment change
   useEffect(() => {
     const formationKey = moment === 'att-org' ? '1-4-3-3' : (moment.includes('att') ? '1-4-4-2' : '1-4-2-3-1');
@@ -68,6 +79,8 @@ export const TacticalBoard: React.FC = () => {
       setManualBallPos(null);
     }
   }, [moment]);
+
+
 
   const getPitchCoords = (event: React.MouseEvent | React.TouchEvent | MouseEvent | TouchEvent) => {
     const pitch = document.getElementById('tactical-pitch');
@@ -154,6 +167,28 @@ export const TacticalBoard: React.FC = () => {
     }
 
     // Priority 2: Ball stays with selected player (possession)
+    if (passInProgress && !isPlaying && passFromId !== null && passToId !== null) {
+      const fromPos = playersMap?.[passFromId] ?? customPositions[passFromId] ?? { x: 50, y: 70 };
+      const toPos = playersMap?.[passToId] ?? customPositions[passToId] ?? { x: 50, y: 70 };
+
+      const now = Date.now();
+      const start = passStartAt ?? now;
+      if (passStartAt === null) setPassStartAt(start);
+
+      const t = Math.min(1, Math.max(0, (now - start) / 300));
+      // easeInOut
+      const easedT = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+      // Ball offset slightly in front of receiver direction
+      const x = fromPos.x + (toPos.x - fromPos.x) * easedT;
+      const y = fromPos.y + (toPos.y - fromPos.y) * easedT;
+
+      return {
+        x: Math.min(96, Math.max(4, x)),
+        y: Math.min(112, Math.max(8, y))
+      };
+    }
+
     if (selectedId && !isPlaying) {
       const playerPos = playersMap ? playersMap[selectedId] : (customPositions[selectedId] || { x: 50, y: 70 });
       const isAttacking = moment.includes('att');
@@ -201,7 +236,7 @@ export const TacticalBoard: React.FC = () => {
   const getActivePositions = (opps: any[]) => {
     const base = { ...customPositions };
     const stepOverrides = activeStep?.playerPositions || {};
-    
+
     let merged = {
       ...base,
       ...stepOverrides
@@ -210,75 +245,108 @@ export const TacticalBoard: React.FC = () => {
     if (!isPlaying) {
       const ballPosForMovement = getBallPos(merged);
       const isAttacking = moment.includes('att');
-      
+
       const idealPositions = SQUAD.reduce((acc, player) => {
         acc[player.number] = player.positions[moment];
         return acc;
       }, {} as Record<number, { x: number; y: number }>);
-      
+
       const teamCenter = Object.values(merged).reduce(
-        (acc, p) => ({ x: acc.x + p.x / Object.keys(merged).length, y: acc.y + p.y / Object.keys(merged).length }),
+        (acc, p) => ({
+          x: acc.x + p.x / Object.keys(merged).length,
+          y: acc.y + p.y / Object.keys(merged).length
+        }),
         { x: 0, y: 0 }
       );
-      
+
       Object.keys(merged).forEach((id) => {
         const pid = Number(id);
         const ideal = idealPositions[pid];
         const current = merged[pid];
-        
         if (!ideal || !current) return;
-        
-        const distToIdeal = Math.hypot(current.x - ideal.x, current.y - ideal.y);
-        const moveSpeed = Math.min(0.08, distToIdeal / 200);
-        
-        let newX = current.x + (ideal.x - current.x) * moveSpeed;
-        let newY = current.y + (ideal.y - current.y) * moveSpeed;
-        
+
+        // Natural drift towards ideal position
+        let newX = current.x + (ideal.x - current.x) * 0.06;
+        let newY = current.y + (ideal.y - current.y) * 0.06;
+
         const hasBall = (pid === selectedId && !manualBallPos);
-        
+
+        // Ball carrier: move slightly ahead, slower
         if (hasBall) {
-          newX = current.x + (ideal.x - current.x) * (moveSpeed * 0.5);
-          newY = current.y + (ideal.y - current.y) * (moveSpeed * 0.5);
-          
-          if (isAttacking) {
-            newY = Math.max(newY, current.y - 1.2);
+          const opponentGoalY = isAttacking ? 15 : 85; // attacking = go up, defending = go down
+          newY += (opponentGoalY - newY) * 0.04;
+          newX += (ideal.x - newX) * 0.03;
+        }
+
+
+        // Team shifting: all players move slightly towards ball (defensive) or forward (attacking)
+        if (!hasBall) {
+          const influence = 0.05;
+          if (moment === 'def-org') {
+            newX += (ballPosForMovement.x - newX) * influence;
+            newY += (ballPosForMovement.y - newY) * influence;
+          } else if (isAttacking) {
+            // Support runs: move forward if ball is advanced
+            newY -= (ballPosForMovement.y - 50) * 0.03;
           }
         }
-        
-        if (moment === 'def-org' && pid !== selectedId) {
-          const ballInfluence = Math.max(0, 1 - Math.hypot(current.x - ballPosForMovement.x, current.y - ballPosForMovement.y) / 50) * 0.25;
-          newX = newX + (ballPosForMovement.x - newX) * ballInfluence;
-          newY = newY + (ballPosForMovement.y - newY) * ballInfluence;
+
+        // Defensive drop: if ball is behind, defenders push deeper
+        if (moment === 'def-org' && pid !== 1 && ballPosForMovement.y > 60 && newY < 70) {
+          newY += 1.5; // drop back
         }
-        
-        if (isAttacking && !hasBall && pid !== 1) {
-          const ballProgress = ballPosForMovement.y;
-          const supportFactor = Math.max(0, (80 - ballProgress) / 120) * 0.12;
-          newY = newY - supportFactor;
+
+
+        // Attacking box occupancy
+        if (isAttacking && (pid === 9 || pid === 11)) {
+          const ballX = ballPosForMovement.x;
+          const ballY = ballPosForMovement.y;
+          if (ballY < 25) {
+            if (pid === 9) {
+              // Center forward attacks near post
+              newX = 50 + (ballX - 50) * 0.3;
+              newY = 15;
+            } else if (pid === 11) {
+              // Left winger attacks far post
+              newX = ballX > 50 ? 20 : 80;
+              newY = 18;
+            }
+          }
         }
-        
-        const distToCenter = Math.hypot(newX - teamCenter.x, newY - teamCenter.y);
+
+        // Keep players inside field
+        merged[pid] = {
+          x: Math.min(96, Math.max(4, newX)),
+          y: Math.min(112, Math.max(8, newY))
+        };
+
+        // Optional centering: preserve shape compactness
+        const distToCenter = Math.hypot(merged[pid].x - teamCenter.x, merged[pid].y - teamCenter.y);
         if (distToCenter > 40) {
-          newX = teamCenter.x + (newX - teamCenter.x) * 0.92;
-          newY = teamCenter.y + (newY - teamCenter.y) * 0.92;
+          merged[pid] = {
+            x: teamCenter.x + (merged[pid].x - teamCenter.x) * 0.92,
+            y: teamCenter.y + (merged[pid].y - teamCenter.y) * 0.92
+          };
         }
-        
-        if (moment === 'def-org' && pid === 9 && ballPosForMovement.y < 40) {
-          newX = ballPosForMovement.x;
-          newY = ballPosForMovement.y + 10;
-        }
-        
-        if (isAttacking && pid !== 1) {
+
+        // Preserve existing defensive/offside safety for non-ball carriers
+        if (isAttacking && pid !== 1 && !hasBall) {
           const opponentDefenders = opps.filter(o => o.role === 'DEF');
           const lastDefenderY = opponentDefenders.length > 0 ? Math.min(...opponentDefenders.map(d => d.y)) : 12;
-          if (newY < lastDefenderY + 3) {
-            newY = lastDefenderY + 3;
-          }
+          if (merged[pid].y < lastDefenderY + 3) merged[pid].y = lastDefenderY + 3;
         }
-        
+
+        if (moment === 'def-org' && pid === 9 && ballPosForMovement.y < 40) {
+          merged[pid] = {
+            x: ballPosForMovement.x,
+            y: ballPosForMovement.y + 10
+          };
+        }
+
+        // Final clamp after adjustments
         merged[pid] = {
-          x: Math.max(4, Math.min(96, newX)),
-          y: Math.max(8, Math.min(112, newY))
+          x: Math.min(96, Math.max(4, merged[pid].x)),
+          y: Math.min(112, Math.max(8, merged[pid].y))
         };
       });
     }
@@ -326,6 +394,32 @@ export const TacticalBoard: React.FC = () => {
   const initialBallPos = getBallPos(customPositions);
   const opponentPositionsDraft = getOpponentPositions(initialBallPos);
   const activePositions = getActivePositions(opponentPositionsDraft);
+
+  // Ball carrier: only when ball is effectively with a selected player
+  const ballCarrierId = selectedId && !manualBallPos && !passInProgress ? selectedId : null;
+
+  // Auto-shoot when selected carrier is in opponent box
+  useEffect(() => {
+    if (!ballCarrierId || isPlaying || passInProgress) return;
+
+    const pos = activePositions[ballCarrierId];
+    if (!pos) return;
+
+    // If carrier is inside opponent penalty area (y < 25) and not already shooting
+    if (pos.y < 25 && !shooting) {
+      setShooting(true);
+      setGoalTarget({ x: 50, y: 5 }); // top goal center
+
+      const t = window.setTimeout(() => {
+        setShooting(false);
+        setGoalTarget(null);
+      }, 600);
+
+      return () => window.clearTimeout(t);
+    }
+  }, [ballCarrierId, activePositions, isPlaying, passInProgress, shooting]);
+
+
   const ballPos = getBallPos(activePositions);
   const opponentPositions = getOpponentPositions(ballPos);
 
@@ -386,8 +480,33 @@ export const TacticalBoard: React.FC = () => {
 
   const handlePlayerSelect = (id: number) => {
     if (isPlaying || isDrawingMode) return;
+    if (selectedId !== null && selectedId !== id) {
+      // Passing: animate ball from current player to new player
+      setPrevSelectedId(selectedId);
+      setSelectedId(id);
+      // pass animation is driven by pass state in getBallPos
+      setPassInProgress(true);
+      setPassStartAt(Date.now());
+      setPassFromId(selectedId);
+      setPassToId(id);
+      setTimeout(() => {
+        setPassInProgress(false);
+        setPassFromId(null);
+        setPassToId(null);
+        setPassStartAt(null);
+      }, 300);
+      return;
+    }
+
     setPrevSelectedId(selectedId);
     setSelectedId(id);
+    // if clicking same/empty, cancel any pass
+    if (passInProgress) {
+      setPassInProgress(false);
+      setPassFromId(null);
+      setPassToId(null);
+      setPassStartAt(null);
+    }
   };
 
   const applyFormation = (name: string) => {
@@ -405,6 +524,7 @@ export const TacticalBoard: React.FC = () => {
 
   return (
     <div className="flex flex-col lg:flex-row gap-8">
+
       {/* Main Tactical Pitch Area */}
       <div className="flex-1 flex flex-col gap-4">
         
@@ -856,8 +976,8 @@ export const TacticalBoard: React.FC = () => {
               }
             }}
             animate={{ 
-              left: `${ballPos.x}%`, 
-              top: `${ballPos.y}%`, 
+              left: shooting && goalTarget ? `${goalTarget.x}%` : `${ballPos.x}%`, 
+              top: shooting && goalTarget ? `${goalTarget.y}%` : `${ballPos.y}%`, 
               rotate: isPlaying ? stepIndex * 360 : (selectedId ? 360 : 0),
               scale: isPlaying || selectedId ? [1, 1.3, 1.1] : 1,
               opacity: 1,
@@ -898,9 +1018,87 @@ export const TacticalBoard: React.FC = () => {
         </div>
       </div>
 
-      {/* Sidebar Analysis (Game Model Principles) - Keep your existing sidebar code */}
+      {/* Sidebar - Restored AI Analysis Section */}
       <div className="w-full lg:w-96 flex flex-col gap-6">
-        {/* ... keep your existing sidebar JSX here - it's unchanged ... */}
+        {/* Sidebar Analysis (Game Model Principles) */}
+        <div className="bg-stone-900 border border-stone-800 rounded-2xl p-6 shadow-xl">
+          <div className="flex items-center gap-3 mb-6 pb-6 border-b border-stone-800">
+            <div className={`p-3 rounded-xl ${moment.includes('att') ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+              <Settings2 size={24} />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-white uppercase tracking-tighter">Tactical Moment</h3>
+              <p className="text-[10px] text-stone-500 font-mono font-bold uppercase tracking-widest">{PRINCIPLES[moment].title}</p>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            {/* Fundamental Principles */}
+            <div>
+              <h4 className="text-[10px] font-black text-amber-500 uppercase tracking-widest flex items-center gap-2 mb-3">
+                <Info size={14} /> Fundamental Principles
+              </h4>
+              <ul className="space-y-2">
+                {PRINCIPLES[moment].keys.map((key, i) => (
+                  <motion.li 
+                    key={`${moment}-${key}`}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.1 }}
+                    className="flex items-start gap-2 text-xs text-stone-300"
+                  >
+                    <div className="w-1.5 h-1.5 rounded-full bg-amber-500/50 mt-1" />
+                    {key}
+                  </motion.li>
+                ))}
+              </ul>
+            </div>
+
+            {/* AI ANALYSIS SECTION - This is what shows player insights */}
+            {selectedId && (
+              <motion.div 
+                key={`sidebar-${selectedId}`}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-4 bg-amber-500/10 rounded-xl border border-amber-500/30"
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-full bg-amber-500 flex items-center justify-center text-stone-950 font-black">
+                    {selectedId}
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-white">{SQUAD.find(p => p.number === selectedId)?.role}</h4>
+                    <p className="text-[9px] text-amber-500 uppercase font-bold">AI Tactical Analysis</p>
+                  </div>
+                </div>
+                <div className="min-h-[60px]">
+                  {isAiLoading ? (
+                    <div className="flex gap-1 py-2">
+                      <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+                      <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse delay-150" />
+                      <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse delay-300" />
+                    </div>
+                  ) : (
+                    <p className="text-sm text-stone-300 leading-relaxed italic">
+                      {aiAnnotation || "Select a player to receive AI tactical analysis"}
+                    </p>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+            {/* Live Geography */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[10px] text-stone-500 font-bold uppercase">
+                <Target size={12} /> 
+                Live Geography: {currentPos ? (() => {
+                  const z = Math.max(1, Math.min(4, Math.ceil(4 - currentPos.y / 25)));
+                  return `Zone ${z}`;
+                })() : '—'}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

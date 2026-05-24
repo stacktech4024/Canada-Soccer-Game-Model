@@ -121,99 +121,49 @@ export const PlayerPiece: React.FC<PlayerPieceProps> = ({
             </g>
           )}
 
-          {/* Ball - Realistic soccer ball with better shading */}
           {type === 'ball' && (
-            <g>
-              {/* Ball shadow on ground */}
-              <ellipse cx="20" cy="28" rx="12" ry="3" fill="rgba(0,0,0,0.25)" />
-
-              {/* Main white ball base */}
-              <circle cx="20" cy="20" r="14" fill="#ffffff" stroke="#cccccc" strokeWidth="0.5" />
-
-              {/* Classic black pentagon pattern (standard soccer ball) */}
-              <g fill="#1a1a1a" stroke="#333" strokeWidth="0.3">
-                {/* Center pentagon */}
-                <polygon points="20,11 26.5,15.5 24,23 16,23 13.5,15.5" />
-
-                {/* Top pentagon */}
-                <polygon points="13.5,15.5 7,12 8,22 13,26 16,23" />
-
-                {/* Right pentagon */}
-                <polygon points="26.5,15.5 33,12 32,22 27,26 24,23" />
-
-                {/* Top-left pentagon */}
-                <polygon points="7,12 9,5 17,5 20,11 13.5,15.5" />
-
-                {/* Top-right pentagon */}
-                <polygon points="33,12 31,5 23,5 20,11 26.5,15.5" />
-
-                {/* Bottom pentagon */}
-                <polygon points="13,26 20,31 27,26 24,23 16,23" />
-              </g>
-
-              {/* White panel lines - connecting pentagons */}
-              <g fill="none" stroke="#ffffff" strokeWidth="1" strokeLinecap="round">
-                <line x1="20" y1="11" x2="26.5" y2="15.5" />
-                <line x1="20" y1="11" x2="13.5" y2="15.5" />
-                <line x1="13.5" y1="15.5" x2="7" y2="12" />
-                <line x1="13.5" y1="15.5" x2="13" y2="26" />
-                <line x1="26.5" y1="15.5" x2="33" y2="12" />
-                <line x1="26.5" y1="15.5" x2="27" y2="26" />
-                <line x1="7" y1="12" x2="9" y2="5" />
-                <line x1="33" y1="12" x2="31" y2="5" />
-                <line x1="9" y1="5" x2="17" y2="5" />
-                <line x1="31" y1="5" x2="23" y2="5" />
-                <line x1="17" y1="5" x2="20" y2="11" />
-                <line x1="23" y1="5" x2="20" y2="11" />
-                <line x1="13" y1="26" x2="20" y2="31" />
-                <line x1="27" y1="26" x2="20" y2="31" />
-                <line x1="13" y1="26" x2="16" y2="23" />
-                <line x1="27" y1="26" x2="24" y2="23" />
-              </g>
-
-              {/* Subtle seam details */}
-              <g
-                fill="none"
-                stroke="#999999"
-                strokeWidth="0.3"
-                strokeDasharray="1 2"
-                opacity="0.4"
-              >
-                <path d="M 20 6 Q 24 10 26 15" />
-                <path d="M 20 34 Q 24 30 26 25" />
-                <path d="M 6 20 Q 10 16 15 14" />
-                <path d="M 34 20 Q 30 16 25 14" />
-              </g>
-
-              {/* Shine highlight for 3D spherical effect */}
-              <ellipse
-                cx="15"
-                cy="14"
-                rx="5"
-                ry="3"
-                fill="rgba(255,255,255,0.5)"
-                transform="rotate(-30 15 14)"
-              />
-
-              {/* Secondary smaller highlight */}
-              <ellipse
-                cx="13"
-                cy="12"
-                rx="2"
-                ry="1.5"
-                fill="rgba(255,255,255,0.7)"
-                transform="rotate(-30 13 12)"
-              />
-
-              {/* Subtle shadow on bottom edge for depth */}
-              <path
-                d="M 12 28 Q 20 32 28 28"
-                fill="none"
-                stroke="rgba(0,0,0,0.15)"
-                strokeWidth="2"
-              />
-            </g>
-          )}
+  <g>
+    {/* Ground shadow */}
+    <ellipse cx="20" cy="28" rx="12" ry="3" fill="rgba(0,0,0,0.3)" />
+    
+    {/* White ball base */}
+    <circle cx="20" cy="20" r="14" fill="#ffffff" stroke="#cccccc" strokeWidth="0.5" />
+    
+    {/* Black pentagons (Telstar style) */}
+    <g fill="#1a1a1a" stroke="#333" strokeWidth="0.3">
+      <polygon points="20,11 26.5,15.5 24,23 16,23 13.5,15.5" />
+      <polygon points="13.5,15.5 7,12 8,22 13,26 16,23" />
+      <polygon points="26.5,15.5 33,12 32,22 27,26 24,23" />
+      <polygon points="7,12 9,5 17,5 20,11 13.5,15.5" />
+      <polygon points="33,12 31,5 23,5 20,11 26.5,15.5" />
+      <polygon points="13,26 20,31 27,26 24,23 16,23" />
+    </g>
+    
+    {/* White panel lines */}
+    <g fill="none" stroke="#ffffff" strokeWidth="1" strokeLinecap="round">
+      <line x1="20" y1="11" x2="26.5" y2="15.5" />
+      <line x1="20" y1="11" x2="13.5" y2="15.5" />
+      <line x1="13.5" y1="15.5" x2="7" y2="12" />
+      <line x1="13.5" y1="15.5" x2="13" y2="26" />
+      <line x1="26.5" y1="15.5" x2="33" y2="12" />
+      <line x1="26.5" y1="15.5" x2="27" y2="26" />
+      <line x1="7" y1="12" x2="9" y2="5" />
+      <line x1="33" y1="12" x2="31" y2="5" />
+      <line x1="9" y1="5" x2="17" y2="5" />
+      <line x1="31" y1="5" x2="23" y2="5" />
+      <line x1="17" y1="5" x2="20" y2="11" />
+      <line x1="23" y1="5" x2="20" y2="11" />
+      <line x1="13" y1="26" x2="20" y2="31" />
+      <line x1="27" y1="26" x2="20" y2="31" />
+      <line x1="13" y1="26" x2="16" y2="23" />
+      <line x1="27" y1="26" x2="24" y2="23" />
+    </g>
+    
+    {/* 3D shine */}
+    <ellipse cx="15" cy="14" rx="5" ry="3" fill="rgba(255,255,255,0.6)" transform="rotate(-30 15 14)" />
+    <ellipse cx="13" cy="12" rx="2" ry="1.5" fill="rgba(255,255,255,0.8)" transform="rotate(-30 13 12)" />
+  </g>
+)}
         </svg>
       </div>
 

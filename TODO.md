@@ -1,0 +1,5 @@
+- [x] Add shooting + goalTarget state to TacticalBoard.tsx
+- [x] Add derived ballCarrierId logic
+- [x] Add useEffect to trigger shooting when carrier is in opponent box (y < 25)
+- [x] Override ball motion.div left/top with goalTarget during shooting
+- [x] Build / typecheck (npm run build) and fix any TS issues

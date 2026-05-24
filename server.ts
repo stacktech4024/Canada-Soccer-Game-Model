@@ -98,11 +98,15 @@ Moment: ${momentTitle}.
 Player: ${playerLabel} (${playerRole}).
 Current Location: ${zone}, ${channel} (Coordinates: x=${x?.toFixed(1)}, y=${y?.toFixed(1)}).
 
-Describe in 2 concise sentences: 
-1. What this player's specific tactical movement/objective should be according to the Pickering FC model (Attacking: 1-4-4-2 "B+", Defending: 1-1-2-3-1 "B-").
-2. For #9: prioritize blocking the CB-to-CB pass in low blocks. For #6/#8: prioritize cover shadows and central compactness.
+Analyze according to Pickering FC principles:
+1. What is this player's specific tactical objective based on the game model?
+2. For #9: prioritize blocking the CB-to-CB pass in low blocks.
+3. For #6/#8: prioritize cover shadows and central compactness.
+4. For wide players: exploit the channels and deliver crosses into the Gold Zone.
 
-Use professional Pickering FC coaching terminology (Zones 1-4, 5 vertical channels, Gold Zone).`;
+Use professional coaching terminology: Zones 1-4, 5 vertical channels, Gold Zone (the area directly in front of goal).
+Keep response to 2 concise sentences.`;
+
 
       console.log(`📡 Calling Gemini API for: ${cacheKey}`);
 
