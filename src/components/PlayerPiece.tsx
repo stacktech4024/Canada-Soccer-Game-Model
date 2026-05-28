@@ -18,7 +18,6 @@ export const PlayerPiece: React.FC<PlayerPieceProps> = ({
   className = "" 
 }) => {
   const isBall = type === 'ball';
-  const isGoalkeeper = type === 'pfc_gk';
 
   return (
     <div 
@@ -53,6 +52,19 @@ export const PlayerPiece: React.FC<PlayerPieceProps> = ({
               <stop offset="0%" stopColor="#9ca3af" stopOpacity="0.3" />
               <stop offset="100%" stopColor="#1f2937" stopOpacity="0.4" />
             </radialGradient>
+            <radialGradient id="ballGradient" cx="35%" cy="28%" r="72%">
+              <stop offset="0%" stopColor="#ffffff" />
+              <stop offset="38%" stopColor="#f8fafc" />
+              <stop offset="74%" stopColor="#d7dde5" />
+              <stop offset="100%" stopColor="#8b96a3" />
+            </radialGradient>
+            <radialGradient id="ballShine" cx="35%" cy="24%" r="34%">
+              <stop offset="0%" stopColor="#ffffff" stopOpacity="0.9" />
+              <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+            </radialGradient>
+            <clipPath id="ballClip">
+              <circle cx="20" cy="20" r="14" />
+            </clipPath>
             <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
               <feGaussianBlur in="SourceAlpha" stdDeviation="2" />
               <feOffset dx="0" dy="1.5" />
@@ -63,6 +75,9 @@ export const PlayerPiece: React.FC<PlayerPieceProps> = ({
                 <feMergeNode />
                 <feMergeNode in="SourceGraphic" />
               </feMerge>
+            </filter>
+            <filter id="ballShadow" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="1.6" stdDeviation="1.4" floodColor="#000000" floodOpacity="0.42" />
             </filter>
           </defs>
 
@@ -122,48 +137,50 @@ export const PlayerPiece: React.FC<PlayerPieceProps> = ({
           )}
 
           {type === 'ball' && (
-  <g>
-    {/* Ground shadow */}
-    <ellipse cx="20" cy="28" rx="12" ry="3" fill="rgba(0,0,0,0.3)" />
-    
-    {/* White ball base */}
-    <circle cx="20" cy="20" r="14" fill="#ffffff" stroke="#cccccc" strokeWidth="0.5" />
-    
-    {/* Black pentagons (Telstar style) */}
-    <g fill="#1a1a1a" stroke="#333" strokeWidth="0.3">
-      <polygon points="20,11 26.5,15.5 24,23 16,23 13.5,15.5" />
-      <polygon points="13.5,15.5 7,12 8,22 13,26 16,23" />
-      <polygon points="26.5,15.5 33,12 32,22 27,26 24,23" />
-      <polygon points="7,12 9,5 17,5 20,11 13.5,15.5" />
-      <polygon points="33,12 31,5 23,5 20,11 26.5,15.5" />
-      <polygon points="13,26 20,31 27,26 24,23 16,23" />
-    </g>
-    
-    {/* White panel lines */}
-    <g fill="none" stroke="#ffffff" strokeWidth="1" strokeLinecap="round">
-      <line x1="20" y1="11" x2="26.5" y2="15.5" />
-      <line x1="20" y1="11" x2="13.5" y2="15.5" />
-      <line x1="13.5" y1="15.5" x2="7" y2="12" />
-      <line x1="13.5" y1="15.5" x2="13" y2="26" />
-      <line x1="26.5" y1="15.5" x2="33" y2="12" />
-      <line x1="26.5" y1="15.5" x2="27" y2="26" />
-      <line x1="7" y1="12" x2="9" y2="5" />
-      <line x1="33" y1="12" x2="31" y2="5" />
-      <line x1="9" y1="5" x2="17" y2="5" />
-      <line x1="31" y1="5" x2="23" y2="5" />
-      <line x1="17" y1="5" x2="20" y2="11" />
-      <line x1="23" y1="5" x2="20" y2="11" />
-      <line x1="13" y1="26" x2="20" y2="31" />
-      <line x1="27" y1="26" x2="20" y2="31" />
-      <line x1="13" y1="26" x2="16" y2="23" />
-      <line x1="27" y1="26" x2="24" y2="23" />
-    </g>
-    
-    {/* 3D shine */}
-    <ellipse cx="15" cy="14" rx="5" ry="3" fill="rgba(255,255,255,0.6)" transform="rotate(-30 15 14)" />
-    <ellipse cx="13" cy="12" rx="2" ry="1.5" fill="rgba(255,255,255,0.8)" transform="rotate(-30 13 12)" />
-  </g>
-)}
+            <g filter="url(#ballShadow)">
+              {/* Pitch contact shadow */}
+              <motion.ellipse
+                cx="20"
+                cy="31"
+                rx="11"
+                ry="3.2"
+                fill="rgba(0,0,0,0.35)"
+                animate={{ rx: [9, 12, 9], opacity: [0.24, 0.42, 0.24] }}
+                transition={{ duration: 0.9, repeat: Infinity, ease: 'easeInOut' }}
+              />
+
+              {/* Rotating match ball shell */}
+              <motion.g
+                animate={{ rotate: [0, 360] }}
+                transition={{ duration: 1.15, repeat: Infinity, ease: 'linear' }}
+                style={{ transformOrigin: '20px 20px' }}
+              >
+                <circle cx="20" cy="20" r="14" fill="url(#ballGradient)" stroke="#111827" strokeWidth="0.7" />
+                <g clipPath="url(#ballClip)">
+                  {/* Modern panel seams */}
+                  <path d="M 20 6 C 25 8 29 12 31 17 C 27 18 23 18 20 16 C 17 18 13 18 9 17 C 11 12 15 8 20 6 Z" fill="#111827" />
+                  <path d="M 8 18 C 12 20 15 23 16 28 C 11 28 7 25 5 21 C 5.5 20 6.5 19 8 18 Z" fill="#111827" />
+                  <path d="M 32 18 C 28 20 25 23 24 28 C 29 28 33 25 35 21 C 34.5 20 33.5 19 32 18 Z" fill="#111827" />
+                  <path d="M 17 29 C 19 26 21 26 23 29 C 22 32 18 32 17 29 Z" fill="#111827" />
+                  <path d="M 20 16 C 23 18 24 22 23 25 C 21 26 19 26 17 25 C 16 22 17 18 20 16 Z" fill="#111827" />
+                  <g fill="none" stroke="#0f172a" strokeWidth="0.65" opacity="0.75">
+                    <path d="M 20 6 C 19 10 19 13 20 16" />
+                    <path d="M 9 17 C 12 18 15 19 20 16" />
+                    <path d="M 31 17 C 28 18 25 19 20 16" />
+                    <path d="M 8 18 C 11 22 14 25 17 25" />
+                    <path d="M 32 18 C 29 22 26 25 23 25" />
+                    <path d="M 17 25 C 18 27 19 28 20 31" />
+                    <path d="M 23 25 C 22 27 21 28 20 31" />
+                  </g>
+                </g>
+              </motion.g>
+
+              {/* Stationary glass highlight gives the ball volume while the shell spins */}
+              <circle cx="20" cy="20" r="14" fill="url(#ballShine)" opacity="0.8" />
+              <ellipse cx="15" cy="13" rx="4.8" ry="2.8" fill="rgba(255,255,255,0.55)" transform="rotate(-28 15 13)" />
+              <circle cx="20" cy="20" r="14" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="0.45" />
+            </g>
+          )}
         </svg>
       </div>
 
