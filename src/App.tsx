@@ -9,6 +9,7 @@ import { TacticalBoard } from './components/TacticalBoard';
 import { MotionRealismOverview } from './components/MotionRealismOverview';
 import { VideoReferenceLibrary } from './components/VideoReferenceLibrary';
 import { Phase3VisualPolishPanel } from './components/Phase3VisualPolishPanel';
+import { TacticalOverlayPreview } from './components/TacticalOverlayPreview';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'profiles' | 'tactical'>('profiles');
@@ -204,6 +205,7 @@ export default function App() {
               </div>
               <MotionRealismOverview />
               <Phase3VisualPolishPanel />
+              <TacticalOverlayPreview />
               <TacticalBoard />
               <VideoReferenceLibrary />
             </motion.div>
