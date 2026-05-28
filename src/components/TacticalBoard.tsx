@@ -9,6 +9,7 @@ import { getBallTransition, getMotionProfile, inferMotionRole, MovementIntent } 
 import { getTacticalAnalysis } from '../services/geminiService';
 import { PlayerPiece } from './PlayerPiece';
 import { PitchBackground } from './PitchBackground';  // ADD THIS IMPORT
+import { LiveTacticalOverlays } from './LiveTacticalOverlays';
 
 const UnitLinks: React.FC<{ players: number[], positions: Record<number, { x: number; y: number }>, color: string, strokeWidth?: number }> = ({ players, positions, color, strokeWidth = 0.5 }) => {
   if (players.length < 2) return null;
@@ -914,6 +915,17 @@ export const TacticalBoard: React.FC = () => {
               )}
             </AnimatePresence>
           </svg>
+
+          <LiveTacticalOverlays
+            moment={moment}
+            isPlaying={isPlaying}
+            activeStep={activeStep}
+            activeMotionStep={activeMotionStep}
+            activePositions={activePositions}
+            homeBasePositions={customPositions}
+            ballPos={ballPos}
+            opponentPositions={opponentPositions}
+          />
 
           {/* Opponent Layer */}
           {opponentPositions.map((opp) => {
