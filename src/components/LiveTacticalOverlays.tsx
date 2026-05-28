@@ -32,6 +32,58 @@ const getIntentStroke = (intent?: string) => {
   return '#f59e0b';
 };
 
+const GoalNet = ({ side, ripple }: { side: 'top' | 'bottom'; ripple: boolean }) => {
+  const isTop = side === 'top';
+  const mouthY = isTop ? 3.6 : 116.4;
+  const backY = isTop ? -1.6 : 121.6;
+  const postTopY = isTop ? 3.6 : 110.8;
+  const postBottomY = isTop ? 9.4 : 116.4;
+
+  return (
+    <motion.g
+      initial={false}
+      animate={ripple ? { scaleY: [1, 1.22, 0.94, 1], opacity: [0.65, 0.98, 0.82, 0.72] } : { scaleY: 1, opacity: 0.72 }}
+      transition={{ duration: ripple ? 0.85 : 0.4, ease: 'easeOut' }}
+      style={{ transformOrigin: `50px ${mouthY}px` }}
+    >
+      {/* Goal frame */}
+      <line x1="38" y1={mouthY} x2="62" y2={mouthY} stroke="rgba(255,255,255,0.95)" strokeWidth="0.75" strokeLinecap="round" />
+      <line x1="38" y1={postTopY} x2="38" y2={postBottomY} stroke="rgba(255,255,255,0.95)" strokeWidth="0.75" strokeLinecap="round" />
+      <line x1="62" y1={postTopY} x2="62" y2={postBottomY} stroke="rgba(255,255,255,0.95)" strokeWidth="0.75" strokeLinecap="round" />
+
+      {/* Net roof/back */}
+      <path
+        d={`M 38 ${mouthY} L 34 ${backY} L 66 ${backY} L 62 ${mouthY}`}
+        fill="rgba(255,255,255,0.06)"
+        stroke="rgba(255,255,255,0.55)"
+        strokeWidth="0.35"
+      />
+
+      {/* Net grid */}
+      {[40, 44, 48, 52, 56, 60].map((x) => (
+        <line key={`${side}-net-v-${x}`} x1={x} y1={mouthY} x2={x + (x < 50 ? -2 : 2)} y2={backY} stroke="rgba(255,255,255,0.42)" strokeWidth="0.22" />
+      ))}
+      {[0.25, 0.5, 0.75].map((t) => {
+        const y = mouthY + (backY - mouthY) * t;
+        return <line key={`${side}-net-h-${t}`} x1="36" y1={y} x2="64" y2={y} stroke="rgba(255,255,255,0.36)" strokeWidth="0.22" />;
+      })}
+
+      {/* Quick ball impact flash when a goal step plays */}
+      {ripple && (
+        <motion.circle
+          cx="50"
+          cy={isTop ? 4.8 : 115.2}
+          r="1.4"
+          fill="rgba(250,204,21,0.9)"
+          initial={{ scale: 0.2, opacity: 0.9 }}
+          animate={{ scale: 5.5, opacity: 0 }}
+          transition={{ duration: 0.8, ease: 'easeOut' }}
+        />
+      )}
+    </motion.g>
+  );
+};
+
 export const LiveTacticalOverlays = ({
   moment,
   isPlaying,
@@ -43,6 +95,8 @@ export const LiveTacticalOverlays = ({
   opponentPositions,
 }: LiveTacticalOverlaysProps) => {
   const focusPlayers = activeStep?.focusPlayers ?? [];
+  const isGoalStep = Boolean(activeStep?.label?.toUpperCase().includes('GOAL'));
+  const isAttackingGoal = ballPos.y < 60;
   const runTrails = buildRunTrails(
     focusPlayers
       .map((playerNumber) => {
@@ -82,7 +136,20 @@ export const LiveTacticalOverlays = ({
         <marker id="live-ball-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto">
           <path d="M 0 0 L 10 5 L 0 10 z" fill="#fbbf24" />
         </marker>
+        <filter id="net-glow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="0.9" result="coloredBlur" />
+          <feMerge>
+            <feMergeNode in="coloredBlur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
       </defs>
+
+      {/* Realistic goal net overlays. These stay behind the tactical actors but give goals a real target. */}
+      <g filter="url(#net-glow)">
+        <GoalNet side="top" ripple={isPlaying && isGoalStep && isAttackingGoal} />
+        <GoalNet side="bottom" ripple={isPlaying && isGoalStep && !isAttackingGoal} />
+      </g>
 
       <AnimatePresence>
         {deliveryZone && (
