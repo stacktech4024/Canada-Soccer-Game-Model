@@ -3,11 +3,12 @@ import { Moment, TacticalStep, OpponentRole } from '../data/tactics';
 import {
   buildRunTrails,
   createBallPath,
+  createCurvedPath,
   createOpponentShapeLine,
   getSetPieceDeliveryZone,
   TacticalPoint,
 } from '../utils/tacticalOverlayPaths';
-import { ScenarioMotionStep } from '../data/scenarioMotion';
+import { OpponentMovementIntent, ScenarioMotionStep } from '../data/scenarioMotion';
 
 interface LiveOpponent extends TacticalPoint {
   id: number;
@@ -30,6 +31,35 @@ const getIntentStroke = (intent?: string) => {
   if (intent === 'overlap') return '#38bdf8';
   if (intent === 'press' || intent === 'recover') return '#fb7185';
   return '#f59e0b';
+};
+
+const getDefenderIntentStroke = (intent?: OpponentMovementIntent) => {
+  if (intent === 'attack-ball') return '#fde68a';
+  if (intent === 'track-runner') return '#fb7185';
+  if (intent === 'mark') return '#f97316';
+  if (intent === 'screen') return '#facc15';
+  if (intent === 'recover-line') return '#93c5fd';
+  return '#f87171';
+};
+
+const getDefenderIntentTarget = (opponent: LiveOpponent, intent?: OpponentMovementIntent, ballPos?: TacticalPoint): TacticalPoint => {
+  const ball = ballPos ?? { x: 50, y: 15 };
+
+  switch (intent) {
+    case 'attack-ball':
+      return { x: ball.x + (opponent.x < ball.x ? -3 : 3), y: Math.max(5, ball.y + 1.5) };
+    case 'track-runner':
+      return { x: opponent.x + (opponent.x < 50 ? 5 : -5), y: Math.max(8, opponent.y - 6) };
+    case 'mark':
+      return { x: opponent.x + (opponent.x < 50 ? 3.5 : -3.5), y: Math.max(8, opponent.y - 3.5) };
+    case 'screen':
+      return { x: 50, y: Math.max(10, opponent.y - 2) };
+    case 'recover-line':
+      return { x: opponent.x, y: Math.max(8, opponent.y - 8) };
+    case 'cover-zone':
+    default:
+      return { x: opponent.x + (ball.x - opponent.x) * 0.2, y: Math.max(8, opponent.y - 2.5) };
+  }
 };
 
 const GoalNet = ({ side, ripple }: { side: 'top' | 'bottom'; ripple: boolean }) => {
@@ -113,6 +143,21 @@ export const LiveTacticalOverlays = ({
       .filter(Boolean) as Parameters<typeof buildRunTrails>[0]
   );
 
+  const defenderTrails = moment === 'set-pieces'
+    ? opponentPositions
+        .filter((opponent) => activeMotionStep?.opponentMovementIntents?.[opponent.id])
+        .map((opponent) => {
+          const intent = activeMotionStep?.opponentMovementIntents?.[opponent.id];
+          const to = getDefenderIntentTarget(opponent, intent, ballPos);
+          return {
+            opponent,
+            intent,
+            to,
+            path: createCurvedPath(opponent, to, intent === 'track-runner' ? -0.22 : -0.12),
+          };
+        })
+    : [];
+
   const ballPath = activeStep?.ballPath?.length
     ? createBallPath(activeStep.ballPath)
     : activeStep?.ballPos
@@ -135,6 +180,9 @@ export const LiveTacticalOverlays = ({
         </marker>
         <marker id="live-ball-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto">
           <path d="M 0 0 L 10 5 L 0 10 z" fill="#fbbf24" />
+        </marker>
+        <marker id="defender-run-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#fb7185" />
         </marker>
         <filter id="net-glow" x="-20%" y="-20%" width="140%" height="140%">
           <feGaussianBlur stdDeviation="0.9" result="coloredBlur" />
@@ -193,6 +241,50 @@ export const LiveTacticalOverlays = ({
             transition={{ duration: 0.8 }}
           />
         )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isPlaying && defenderTrails.map(({ opponent, intent, path, to }, index) => (
+          <motion.g key={`defender-run-${opponent.id}-${intent}-${activeStep?.label ?? 'step'}`}>
+            <motion.path
+              d={path}
+              fill="none"
+              stroke={getDefenderIntentStroke(intent)}
+              strokeWidth="0.7"
+              strokeDasharray={intent === 'screen' || intent === 'cover-zone' ? '1.4 1.4' : '3 1.8'}
+              markerEnd="url(#defender-run-arrow)"
+              initial={{ pathLength: 0, opacity: 0 }}
+              animate={{ pathLength: 1, opacity: 0.88 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.95, delay: 0.08 + index * 0.1 }}
+            />
+            <motion.circle
+              cx={to.x}
+              cy={to.y}
+              r="1.25"
+              fill="rgba(248,113,113,0.22)"
+              stroke={getDefenderIntentStroke(intent)}
+              strokeWidth="0.35"
+              initial={{ scale: 0.6, opacity: 0 }}
+              animate={{ scale: [0.9, 1.2, 0.9], opacity: 0.85 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 1.2, repeat: Infinity, delay: index * 0.08 }}
+            />
+            <motion.text
+              x={(opponent.x + to.x) / 2}
+              y={(opponent.y + to.y) / 2 + 2.3}
+              fontSize="2"
+              fill={getDefenderIntentStroke(intent)}
+              fontWeight="900"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.9 }}
+              exit={{ opacity: 0 }}
+              transition={{ delay: 0.25 + index * 0.08 }}
+            >
+              D{opponent.id} {intent?.replace('-', ' ').toUpperCase()}
+            </motion.text>
+          </motion.g>
+        ))}
       </AnimatePresence>
 
       <AnimatePresence>
