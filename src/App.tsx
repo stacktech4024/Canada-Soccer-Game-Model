@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 
 import { TacticalBoard } from './components/TacticalBoard';
 import { MotionRealismOverview } from './components/MotionRealismOverview';
+import { VideoReferenceLibrary } from './components/VideoReferenceLibrary';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'profiles' | 'tactical'>('profiles');
@@ -202,6 +203,7 @@ export default function App() {
               </div>
               <MotionRealismOverview />
               <TacticalBoard />
+              <VideoReferenceLibrary />
             </motion.div>
           )}
         </AnimatePresence>

@@ -127,11 +127,11 @@ export const SCENARIO_MOTION: Record<Moment, ScenarioMotionStep[]> = {
   ],
   'set-pieces': [
     {
-      stepDurationMs: 2400,
+      stepDurationMs: 2700,
       ballAction: 'cross',
-      movementIntents: { 5: 'finish', 8: 'support', 9: 'finish' },
+      movementIntents: { 2: 'hold', 5: 'finish', 7: 'support', 8: 'support', 9: 'finish', 10: 'support', 11: 'finish' },
       opponentReaction: 'drop',
-      coachingNote: 'Set-piece runners should start from staggered positions and attack different heights in the box.',
+      coachingNote: 'Simple corner routine: show a short-corner decoy, then attack the corridor between the six-yard box and penalty spot. #9 attacks the near-post lane, #5 attacks central height, #11 holds the far-post lane, and #8/#10 stay alive for the second ball or cutback.',
     },
   ],
 };
