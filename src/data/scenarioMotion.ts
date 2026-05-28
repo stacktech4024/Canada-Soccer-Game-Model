@@ -2,13 +2,16 @@ import { MovementIntent } from '../utils/motionRealism';
 import { Moment } from './tactics';
 
 export type BallAction = 'pass' | 'carry' | 'cross' | 'shot';
+export type OpponentMovementIntent = 'mark' | 'screen' | 'track-runner' | 'attack-ball' | 'cover-zone' | 'recover-line';
 
 export interface ScenarioMotionStep {
   stepDurationMs: number;
   ballAction: BallAction;
   movementIntents: Record<number, MovementIntent>;
   opponentReaction: 'hold' | 'shift' | 'press' | 'drop' | 'recover';
+  opponentMovementIntents?: Record<number, OpponentMovementIntent>;
   coachingNote: string;
+  opponentCoachingNote?: string;
 }
 
 export const SCENARIO_MOTION: Record<Moment, ScenarioMotionStep[]> = {
@@ -127,11 +130,20 @@ export const SCENARIO_MOTION: Record<Moment, ScenarioMotionStep[]> = {
   ],
   'set-pieces': [
     {
-      stepDurationMs: 2700,
+      stepDurationMs: 3200,
       ballAction: 'cross',
       movementIntents: { 2: 'hold', 5: 'finish', 7: 'support', 8: 'support', 9: 'finish', 10: 'support', 11: 'finish' },
       opponentReaction: 'drop',
+      opponentMovementIntents: {
+        1: 'attack-ball',
+        2: 'track-runner',
+        3: 'mark',
+        4: 'cover-zone',
+        5: 'screen',
+        6: 'recover-line',
+      },
       coachingNote: 'Simple corner routine: show a short-corner decoy, then attack the corridor between the six-yard box and penalty spot. #9 attacks the near-post lane, #5 attacks central height, #11 holds the far-post lane, and #8/#10 stay alive for the second ball or cutback.',
+      opponentCoachingNote: 'Defenders should not stay frozen: GK attacks the delivery, one defender tracks the near-post runner, one screens the central zone, and the rest recover toward the goal line/second-ball area.',
     },
   ],
 };
