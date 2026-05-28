@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { SQUAD, PRINCIPLES, OPPONENTS, Moment, SEQUENCES, TacticalStep, FORMATIONS, OpponentRole } from '../data/tactics';
 import { players } from '../data/players';
 import { Settings2, RotateCcw, LayoutGrid, ShieldAlert, Zap, Info, Target, Users, Play, Pause, MousePointer2, Pencil } from 'lucide-react';
+import { getScenarioMotionStep } from '../data/scenarioMotion';
+import { getBallTransition, getMotionProfile, inferMotionRole, MovementIntent } from '../utils/motionRealism';
 
 import { getTacticalAnalysis } from '../services/geminiService';
 import { PlayerPiece } from './PlayerPiece';
@@ -25,6 +27,21 @@ const UnitLinks: React.FC<{ players: number[], positions: Record<number, { x: nu
       transition={{ duration: 1 }}
     />
   );
+};
+
+const getOpponentReactionLabel = (reaction: 'hold' | 'shift' | 'press' | 'drop' | 'recover') => {
+  switch (reaction) {
+    case 'press':
+      return 'Press';
+    case 'drop':
+      return 'Drop';
+    case 'recover':
+      return 'Recover';
+    case 'shift':
+      return 'Shift';
+    default:
+      return 'Hold';
+  }
 };
 
 export const TacticalBoard: React.FC = () => {
@@ -143,8 +160,11 @@ export const TacticalBoard: React.FC = () => {
 
   const sequence = SEQUENCES[moment] || [];
   const activeStep: TacticalStep | null = isPlaying && sequence.length > 0 ? sequence[stepIndex] : null;
+  const activeMotionStep = isPlaying ? getScenarioMotionStep(moment, stepIndex) : null;
+  const sidebarMotionStep = getScenarioMotionStep(moment, isPlaying ? stepIndex : 0);
   const isGoalStep = activeStep?.label.toUpperCase().includes('GOAL');
   const isTransitionMoment = moment === 'trans-att' || moment === 'trans-def';
+  const ballTransition = getBallTransition(activeMotionStep?.ballAction ?? 'pass');
 
   const getBallPos = (playersMap?: Record<number, { x: number; y: number }>) => {
     // Priority 1: Animated sequence ball path
@@ -355,9 +375,35 @@ export const TacticalBoard: React.FC = () => {
   };
 
   const getOpponentPositions = (currentBall: { x: number; y: number }) => {
-    return OPPONENTS.map((opp, i) => {
-      const basePos = activeStep?.opponentPositions?.[i] || opp;
-      if (isPlaying) return basePos;
+    return OPPONENTS.map((opp) => {
+      const basePos = activeStep?.opponentPositions?.[opp.id] || opp;
+      if (isPlaying) {
+        const reaction = activeMotionStep?.opponentReaction ?? 'hold';
+        let reactiveX = basePos.x;
+        let reactiveY = basePos.y;
+        const toBallX = currentBall.x - basePos.x;
+        const toBallY = currentBall.y - basePos.y;
+
+        if (reaction === 'press') {
+          reactiveX += toBallX * 0.18;
+          reactiveY += toBallY * 0.18;
+        } else if (reaction === 'shift') {
+          reactiveX += toBallX * 0.22;
+          reactiveY += toBallY * 0.08;
+        } else if (reaction === 'drop') {
+          reactiveY -= 3.5;
+          reactiveX += toBallX * 0.08;
+        } else if (reaction === 'recover') {
+          reactiveX += (opp.x - basePos.x) * 0.25;
+          reactiveY += (opp.y - basePos.y) * 0.25;
+        }
+
+        return {
+          ...opp,
+          x: Math.max(5, Math.min(95, reactiveX)),
+          y: Math.max(2, Math.min(95, reactiveY))
+        };
+      }
 
       const ballX = currentBall.x;
       const ballY = currentBall.y;
@@ -473,10 +519,10 @@ export const TacticalBoard: React.FC = () => {
           setIsPlaying(false);
           setStepIndex(0);
         }
-      }, 3500);
+      }, activeMotionStep?.stepDurationMs ?? 3500);
     }
     return () => clearTimeout(timer);
-  }, [isPlaying, stepIndex, sequence]);
+  }, [isPlaying, stepIndex, sequence, activeMotionStep?.stepDurationMs]);
 
   const handlePlayerSelect = (id: number) => {
     if (isPlaying || isDrawingMode) return;
@@ -870,10 +916,10 @@ export const TacticalBoard: React.FC = () => {
           </svg>
 
           {/* Opponent Layer */}
-          {opponentPositions.map((opp, i) => {
+          {opponentPositions.map((opp) => {
             return (
               <motion.div 
-                key={`opp-${i}`}
+                key={`opp-${opp.id}`}
                 animate={{ left: `${opp.x}%`, top: `${opp.y}%` }}
                 transition={{ type: 'spring', damping: 25, stiffness: 45 }}
                 className="absolute -translate-x-1/2 -translate-y-1/2 w-7 h-7 z-20 pointer-events-none"
@@ -891,6 +937,10 @@ export const TacticalBoard: React.FC = () => {
             const pos = activePositions[player.number] || { x: 0, y: 0 };
             const isSelected = selectedId === player.number;
             const isFocused = activeStep?.focusPlayers?.includes(player.number);
+            const playerRole = inferMotionRole(player.label, player.number);
+            const movementIntent: MovementIntent = activeMotionStep?.movementIntents?.[player.number] || (isFocused ? 'support' : 'hold');
+            const movementProfile = getMotionProfile(playerRole, movementIntent, isFocused);
+            const movementEase = movementIntent === 'press' || movementIntent === 'recover' ? 'easeOut' : 'easeInOut';
 
             return (
               <motion.div
@@ -918,8 +968,12 @@ export const TacticalBoard: React.FC = () => {
                   zIndex: isSelected || isFocused ? 40 : 10
                 }}
                 transition={{ 
-                  left: isPlaying ? { duration: 1.2, ease: "easeInOut" } : { type: 'spring', damping: 18, stiffness: 65, mass: 0.8 },
-                  top: isPlaying ? { duration: 1.2, ease: "easeInOut" } : { type: 'spring', damping: 18, stiffness: 65, mass: 0.8 },
+                  left: isPlaying
+                    ? { duration: movementProfile.durationMs / 1000, delay: movementProfile.delayMs / 1000, ease: movementEase }
+                    : { type: 'spring', damping: 18, stiffness: 65, mass: 0.8 },
+                  top: isPlaying
+                    ? { duration: movementProfile.durationMs / 1000, delay: movementProfile.delayMs / 1000, ease: movementEase }
+                    : { type: 'spring', damping: 18, stiffness: 65, mass: 0.8 },
                   y: { repeat: isSelected ? Infinity : 0, duration: 1.8, ease: "easeInOut" },
                   scale: { type: 'spring', damping: 15, stiffness: 100 }
                 }}
@@ -978,7 +1032,9 @@ export const TacticalBoard: React.FC = () => {
             animate={{ 
               left: shooting && goalTarget ? `${goalTarget.x}%` : `${ballPos.x}%`, 
               top: shooting && goalTarget ? `${goalTarget.y}%` : `${ballPos.y}%`, 
-              rotate: isPlaying ? stepIndex * 360 : (selectedId ? 360 : 0),
+              rotate: isPlaying
+                ? (activeMotionStep?.ballAction === 'shot' ? stepIndex * 540 : activeMotionStep?.ballAction === 'cross' ? stepIndex * 280 : stepIndex * 200)
+                : (selectedId ? 360 : 0),
               scale: isPlaying || selectedId ? [1, 1.3, 1.1] : 1,
               opacity: 1,
               filter: isTransitionMoment ? 'drop-shadow(0 0 8px rgba(239,68,68,0.8))' : 'none'
@@ -989,8 +1045,12 @@ export const TacticalBoard: React.FC = () => {
               stiffness: 60, 
               mass: 0.6,
               scale: { duration: 0.3, repeat: isPlaying ? Infinity : (selectedId ? Infinity : 0), repeatType: "reverse" },
-              left: { type: 'spring', damping: 18, stiffness: 55 },
-              top: { type: 'spring', damping: 18, stiffness: 55 }
+              left: isPlaying
+                ? { duration: ballTransition.duration, ease: ballTransition.ease }
+                : { type: 'spring', damping: 18, stiffness: 55 },
+              top: isPlaying
+                ? { duration: ballTransition.duration, ease: ballTransition.ease }
+                : { type: 'spring', damping: 18, stiffness: 55 }
             }}
             className="absolute -translate-x-1/2 -translate-y-1/2 w-5 h-5 z-[60] cursor-grab active:cursor-grabbing"
           >
@@ -1053,6 +1113,23 @@ export const TacticalBoard: React.FC = () => {
                 ))}
               </ul>
             </div>
+
+            {sidebarMotionStep && (
+              <motion.div
+                key={`${moment}-motion-note-${isPlaying ? stepIndex : 0}`}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-4 bg-blue-500/10 rounded-xl border border-blue-500/30"
+              >
+                <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-2">Motion Coaching Note</h4>
+                <p className="text-xs text-stone-300 leading-relaxed">{sidebarMotionStep.coachingNote}</p>
+                <div className="mt-3 flex flex-wrap gap-2 text-[9px] font-black uppercase tracking-widest">
+                  <span className="px-2 py-1 rounded-full bg-amber-500/15 text-amber-400">Ball: {sidebarMotionStep.ballAction}</span>
+                  <span className="px-2 py-1 rounded-full bg-red-500/15 text-red-400">Reaction: {getOpponentReactionLabel(sidebarMotionStep.opponentReaction)}</span>
+                  <span className="px-2 py-1 rounded-full bg-stone-700 text-stone-200">Step: {sidebarMotionStep.stepDurationMs}ms</span>
+                </div>
+              </motion.div>
+            )}
 
             {/* AI ANALYSIS SECTION - This is what shows player insights */}
             {selectedId && (
