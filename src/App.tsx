@@ -6,6 +6,7 @@ import { Info, Sparkles, BookOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 import { TacticalBoard } from './components/TacticalBoard';
+import { MotionRealismOverview } from './components/MotionRealismOverview';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'profiles' | 'tactical'>('profiles');
@@ -199,6 +200,7 @@ export default function App() {
                    Analyze unit relationships within vertical channels and horizontal zones, emphasizing the <strong>5-Second Mental Trigger</strong> for ball recovery.
                  </p>
               </div>
+              <MotionRealismOverview />
               <TacticalBoard />
             </motion.div>
           )}

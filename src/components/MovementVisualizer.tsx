@@ -2,12 +2,34 @@ import React from 'react';
 import { PlayerProfile } from '../data/players';
 import { motion } from 'motion/react';
 import { PlayerPiece } from './PlayerPiece';
+import {
+  buildMotionWaypoints,
+  inferMotionRole,
+  inferMovementIntent,
+  getMotionProfile,
+  MovementIntent,
+  Point,
+} from '../utils/motionRealism';
 
 interface MovementVisualizerProps {
   player: PlayerProfile;
 }
 
+const getCurvedPath = (points: Point[], intent: MovementIntent) => {
+  if (points.length < 2) return '';
+
+  const waypoints = buildMotionWaypoints(points[0], points[points.length - 1], intent);
+  if (waypoints.length < 3) {
+    return `M ${waypoints[0].x} ${waypoints[0].y} L ${waypoints[1].x} ${waypoints[1].y}`;
+  }
+
+  const [start, control, end] = waypoints;
+  return `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`;
+};
+
 export const MovementVisualizer: React.FC<MovementVisualizerProps> = ({ player }) => {
+  const playerRole = inferMotionRole(player.shortPos, player.number);
+
   return (
     <div className="relative aspect-[4/3] w-full bg-stone-950 border border-stone-800 rounded-lg overflow-hidden group">
       {/* Background Grid */}
@@ -19,6 +41,12 @@ export const MovementVisualizer: React.FC<MovementVisualizerProps> = ({ player }
       <div className="absolute inset-y-0 left-0 w-px bg-stone-800/30" style={{ left: '75%' }} />
 
       <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full p-4 drop-shadow-2xl">
+        <defs>
+          <marker id={`movement-arrow-${player.id}`} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="white" opacity="0.8" />
+          </marker>
+        </defs>
+
         {/* Draw Zones First */}
         {player.patterns.filter(p => p.type === 'zone').map((pattern) => (
           <motion.polygon
@@ -33,39 +61,71 @@ export const MovementVisualizer: React.FC<MovementVisualizerProps> = ({ player }
           </motion.polygon>
         ))}
 
-        {/* Draw Paths */}
-        {player.patterns.filter(p => p.type === 'path').map((pattern) => (
-          <g key={pattern.id}>
-            <motion.path
-              d={`M ${pattern.points[0].x} ${pattern.points[0].y} ${pattern.points.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ')}`}
-              fill="none"
-              stroke="white"
-              strokeWidth="1.5"
-              strokeDasharray="4 2"
-              initial={{ pathLength: 0, opacity: 0 }}
-              animate={{ pathLength: 1, opacity: 0.6 }}
-              transition={{ duration: 2, ease: "easeInOut", repeat: Infinity, repeatDelay: 1 }}
-            />
-            {/* Arrowhead */}
-            <motion.path
-              d="M 0 -2 L 3 0 L 0 2 Z"
-              fill="white"
-              initial={{ opacity: 0 }}
-              animate={{ 
-                opacity: 0.8,
-                x: pattern.points[pattern.points.length - 1].x,
-                y: pattern.points[pattern.points.length - 1].y,
-                rotate: Math.atan2(
-                  pattern.points[pattern.points.length - 1].y - pattern.points[pattern.points.length - 2].y,
-                  pattern.points[pattern.points.length - 1].x - pattern.points[pattern.points.length - 2].x
-                ) * (180 / Math.PI)
-              }}
-              transition={{ duration: 0.5, delay: 1.5 }}
-            >
-              <title>{pattern.label} direction</title>
-            </motion.path>
-          </g>
-        ))}
+        {/* Draw Paths with game-realistic curves instead of straight robotic lines */}
+        {player.patterns.filter(p => p.type === 'path').map((pattern) => {
+          const from = pattern.points[0];
+          const to = pattern.points[pattern.points.length - 1];
+          const loweredLabel = pattern.label.toLowerCase();
+          const intent = loweredLabel.includes('overlap')
+            ? 'overlap'
+            : loweredLabel.includes('recover')
+              ? 'recover'
+              : loweredLabel.includes('rush') || loweredLabel.includes('challenge')
+                ? 'press'
+                : loweredLabel.includes('attack')
+                  ? 'finish'
+                  : inferMovementIntent(from, to, playerRole, 'att-org');
+          const profile = getMotionProfile(playerRole, intent, true);
+          const curvedPath = getCurvedPath(pattern.points, intent);
+
+          return (
+            <g key={pattern.id}>
+              <motion.path
+                d={curvedPath}
+                fill="none"
+                stroke="white"
+                strokeWidth="1.5"
+                strokeDasharray={intent === 'press' || intent === 'recover' ? '2 1.5' : '4 2'}
+                markerEnd={`url(#movement-arrow-${player.id})`}
+                initial={{ pathLength: 0, opacity: 0 }}
+                animate={{ pathLength: 1, opacity: intent === 'press' || intent === 'recover' ? 0.85 : 0.65 }}
+                transition={{
+                  duration: profile.durationMs / 1000,
+                  ease: intent === 'press' || intent === 'recover' ? 'easeOut' : 'easeInOut',
+                  repeat: Infinity,
+                  repeatDelay: 1,
+                }}
+              />
+
+              {/* Moving player ghost: shows timing, acceleration, and curved run direction */}
+              <motion.circle
+                r="1.6"
+                fill="white"
+                initial={{ offsetDistance: '0%', opacity: 0 }}
+                animate={{ offsetDistance: ['0%', '55%', '100%'], opacity: [0, 0.9, 0] }}
+                transition={{
+                  duration: profile.durationMs / 1000,
+                  delay: profile.delayMs / 1000,
+                  ease: intent === 'press' || intent === 'recover' ? 'easeOut' : 'easeInOut',
+                  repeat: Infinity,
+                  repeatDelay: 1,
+                }}
+                style={{
+                  offsetPath: `path('${curvedPath}')`,
+                }}
+              />
+
+              <text
+                x={to.x}
+                y={to.y + 6}
+                textAnchor="middle"
+                className="fill-stone-500 font-mono text-[2.4px] uppercase tracking-widest font-bold pointer-events-none"
+              >
+                {intent} · {pattern.label}
+              </text>
+            </g>
+          );
+        })}
 
         {/* Player Piece Representation */}
         <foreignObject
@@ -87,10 +147,8 @@ export const MovementVisualizer: React.FC<MovementVisualizerProps> = ({ player }
         </foreignObject>
 
         {/* Dynamic Labels on Pitch */}
-        {player.patterns.map((pattern) => {
-          const point = pattern.type === 'path' ? pattern.points[pattern.points.length - 1] : pattern.points[0];
-          const yOffset = pattern.type === 'path' ? 6 : 2;
-          
+        {player.patterns.filter(p => p.type === 'zone').map((pattern) => {
+          const point = pattern.points[0];
           return (
             <motion.g
               key={`label-group-${pattern.id}`}
@@ -100,7 +158,7 @@ export const MovementVisualizer: React.FC<MovementVisualizerProps> = ({ player }
             >
               <text
                 x={point.x}
-                y={point.y + yOffset}
+                y={point.y + 2}
                 textAnchor="middle"
                 className="fill-stone-500 font-mono text-[2.5px] uppercase tracking-widest font-bold pointer-events-none"
               >
@@ -122,7 +180,7 @@ export const MovementVisualizer: React.FC<MovementVisualizerProps> = ({ player }
       </div>
 
       <div className="absolute top-2 right-2 text-[8px] font-mono text-stone-700 uppercase">
-        Positional Dynamics :: {player.shortPos}
+        Motion Engine :: {player.shortPos}
       </div>
     </div>
   );
